@@ -1,0 +1,6 @@
+{
+  "name": "Smart Énergie Monitor",
+  "description": "Moniteur d'énergie intelligent avec surveillance en temps réel, graphiques d'onde, contrôles de sécurité et rapports PDF.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

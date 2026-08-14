@@ -15,7 +15,6 @@ import {
   LayoutGrid,
   List,
   Clock,
-  CheckCircle2,
 } from 'lucide-react';
 import { HistoryRecord } from '../types';
 
@@ -66,7 +65,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
     return true;
   });
 
-  // Export CSV function (Professional engineering feature)
+  // Export CSV function
   const handleExportCSV = () => {
     if (records.length === 0) {
       showToast('Aucun enregistrement à exporter', 'warning');
@@ -94,12 +93,12 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
     const dateStr = new Date().toISOString().slice(0, 10);
-    link.setAttribute('download', `Rapport_Smart_Energy_Monitor_${dateStr}.csv`);
+    link.setAttribute('download', `Rapport_Smart_Energy_${dateStr}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 
-    showToast('Export CSV téléchargé avec succès', 'success');
+    showToast('Export CSV téléchargé', 'success');
   };
 
   const handleConfirmReset = () => {
@@ -107,145 +106,142 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
     setIsResetModalOpen(false);
     showToast(
       resetEnergyOption
-        ? 'Journal et accumulateurs d\'énergie réinitialisés'
-        : 'Journal des rapports réinitialisé avec succès',
+        ? 'Journal et accumulateurs réinitialisés'
+        : 'Journal réinitialisé',
       'success'
     );
   };
 
   return (
-    <div className="space-y-3 sm:space-y-3.5 animate-fadeIn w-full max-w-full font-mono text-xs overflow-hidden">
+    <div className="space-y-3 w-full max-w-full font-mono text-xs overflow-hidden">
       {/* 1. Header & Summary Statistics Cards */}
-      <div className="glass-panel p-3.5 sm:p-4 rounded-2xl border border-slate-800/90 bg-slate-950/90 shadow-xl overflow-hidden">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="p-2 rounded-xl bg-violet-500/15 text-violet-400 border border-violet-500/30 shrink-0">
+      <div className="glass-panel p-3 sm:p-4 rounded-2xl border border-slate-800/90 bg-slate-950/90 shadow-lg w-full max-w-full overflow-hidden">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-800/80">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="p-1.5 sm:p-2 rounded-xl bg-violet-500/15 text-violet-400 border border-violet-500/30 shrink-0">
               <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2 truncate">
-                <span>JOURNAL D'AUDIT ÉLECTRIQUE</span>
+              <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-100 flex items-center gap-1.5 truncate">
+                <span>JOURNAL D'AUDIT</span>
                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shrink-0">
                   {totalCount} RELEVÉS
                 </span>
               </h2>
-              <p className="text-[10.5px] text-slate-400 font-sans truncate">
-                Suivi des anomalies, surtensions et commutations relais
-              </p>
             </div>
           </div>
 
           {/* Action Toolbar */}
-          <div className="flex items-center gap-1.5 sm:gap-2 w-full md:w-auto justify-start md:justify-end flex-wrap">
+          <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end flex-wrap">
             {/* View Mode Switcher */}
-            <div className="flex items-center bg-slate-900/90 border border-slate-800 rounded-lg p-0.5">
+            <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5 shrink-0">
               <button
                 onClick={() => setViewMode('table')}
-                className={`px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
                   viewMode === 'table' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'text-slate-400 hover:text-slate-200'
                 }`}
-                title="Vue Tableau compact"
+                title="Tableau"
               >
                 <List className="w-3 h-3" />
-                <span className="hidden sm:inline">Tableau</span>
+                <span className="hidden xs:inline">Tableau</span>
               </button>
               <button
                 onClick={() => setViewMode('cards')}
-                className={`px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
                   viewMode === 'cards' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'text-slate-400 hover:text-slate-200'
                 }`}
-                title="Vue Cartes détaillées"
+                title="Cartes"
               >
                 <LayoutGrid className="w-3 h-3" />
-                <span className="hidden sm:inline">Cartes</span>
+                <span className="hidden xs:inline">Cartes</span>
               </button>
             </div>
 
             {/* Reset Button */}
             <button
               onClick={() => setIsResetModalOpen(true)}
-              className="px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 text-xs shadow-sm"
-              title="Purger l'historique et réinitialiser"
+              className="px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold flex items-center gap-1 cursor-pointer transition-all text-[10.5px] shrink-0"
+              title="Purger l'historique"
             >
-              <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
-              <span>Réinitialiser</span>
+              <RotateCcw className="w-3 h-3 text-rose-400" />
+              <span>Reset</span>
             </button>
 
             {/* Export CSV */}
             <button
               onClick={handleExportCSV}
               disabled={records.length === 0}
-              className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-bold flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-40 text-xs"
-              title="Exporter sous format Excel/CSV"
+              className="px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-bold flex items-center gap-1 cursor-pointer transition-all disabled:opacity-40 text-[10.5px] shrink-0"
+              title="Export CSV"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">CSV</span>
+              <FileSpreadsheet className="w-3 h-3 text-emerald-400" />
+              <span>CSV</span>
             </button>
 
             {/* Export PDF */}
             <button
               onClick={onExportPdf}
               disabled={records.length === 0}
-              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95 text-xs disabled:opacity-40"
-              title="Générer et imprimer le rapport PDF"
+              className="px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold flex items-center gap-1 cursor-pointer shadow-sm transition-all text-[10.5px] disabled:opacity-40 shrink-0"
+              title="Rapport PDF"
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download className="w-3 h-3" />
               <span>PDF</span>
             </button>
           </div>
         </div>
 
         {/* 4 KPI Metrics Boxes */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5 mt-3">
-          <div className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-800/80">
-            <div className="text-[9.5px] text-slate-400 uppercase font-semibold flex items-center justify-between">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2.5">
+          <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/80 border border-slate-800/80">
+            <div className="text-[9px] text-slate-400 uppercase font-semibold flex items-center justify-between">
               <span>Événements</span>
               <Activity className="w-3 h-3 text-cyan-400" />
             </div>
-            <div className="text-base sm:text-lg font-black text-white mt-0.5 truncate">
-              {totalCount} <span className="text-[9.5px] font-normal text-slate-400">enregistrés</span>
+            <div className="text-sm sm:text-base font-black text-white mt-0.5 truncate">
+              {totalCount}
             </div>
           </div>
 
-          <div className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-800/80">
-            <div className="text-[9.5px] text-slate-400 uppercase font-semibold flex items-center justify-between">
+          <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/80 border border-slate-800/80">
+            <div className="text-[9px] text-slate-400 uppercase font-semibold flex items-center justify-between">
               <span>Incidents</span>
               <AlertTriangle className="w-3 h-3 text-rose-400" />
             </div>
-            <div className={`text-base sm:text-lg font-black mt-0.5 truncate ${incidentCount > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-              {incidentCount} <span className="text-[9.5px] font-normal text-slate-400">anomalies</span>
+            <div className={`text-sm sm:text-base font-black mt-0.5 truncate ${incidentCount > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+              {incidentCount}
             </div>
           </div>
 
-          <div className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-800/80">
-            <div className="text-[9.5px] text-slate-400 uppercase font-semibold flex items-center justify-between">
+          <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/80 border border-slate-800/80">
+            <div className="text-[9px] text-slate-400 uppercase font-semibold flex items-center justify-between">
               <span>Tension Moy.</span>
               <Zap className="w-3 h-3 text-cyan-400" />
             </div>
-            <div className="text-base sm:text-lg font-black text-cyan-300 mt-0.5 truncate">
-              {avgVoltage} <span className="text-[9.5px] font-normal text-slate-400">V</span>
+            <div className="text-sm sm:text-base font-black text-cyan-300 mt-0.5 truncate">
+              {avgVoltage} <span className="text-[9px] font-normal text-slate-400">V</span>
             </div>
           </div>
 
-          <div className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-800/80">
-            <div className="text-[9.5px] text-slate-400 uppercase font-semibold flex items-center justify-between">
+          <div className="p-2 sm:p-2.5 rounded-xl bg-slate-900/80 border border-slate-800/80">
+            <div className="text-[9px] text-slate-400 uppercase font-semibold flex items-center justify-between">
               <span>Conformité</span>
               <ShieldCheck className="w-3 h-3 text-emerald-400" />
             </div>
-            <div className="text-base sm:text-lg font-black text-emerald-300 mt-0.5 truncate">
-              {complianceRate}% <span className="text-[9.5px] font-normal text-slate-400">nominal</span>
+            <div className="text-sm sm:text-base font-black text-emerald-300 mt-0.5 truncate">
+              {complianceRate}%
             </div>
           </div>
         </div>
       </div>
 
       {/* 2. Filter & Search Controls Bar */}
-      <div className="glass-panel p-2.5 rounded-xl border border-slate-800/90 bg-slate-950/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+      <div className="glass-panel p-2 rounded-xl border border-slate-800/90 bg-slate-950/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 w-full max-w-full">
         {/* Filter Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0">
+        <div className="flex items-center gap-1 overflow-x-auto pb-0.5 sm:pb-0">
           <button
             onClick={() => setFilter('all')}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer shrink-0 ${
+            className={`px-2 py-0.5 rounded-lg text-[10.5px] font-semibold transition-all cursor-pointer shrink-0 ${
               filter === 'all'
                 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
                 : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
@@ -255,7 +251,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
           </button>
           <button
             onClick={() => setFilter('incidents')}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer shrink-0 ${
+            className={`px-2 py-0.5 rounded-lg text-[10.5px] font-semibold transition-all cursor-pointer shrink-0 ${
               filter === 'incidents'
                 ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm'
                 : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
@@ -265,7 +261,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
           </button>
           <button
             onClick={() => setFilter('normal')}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer shrink-0 ${
+            className={`px-2 py-0.5 rounded-lg text-[10.5px] font-semibold transition-all cursor-pointer shrink-0 ${
               filter === 'normal'
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
                 : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
@@ -276,14 +272,14 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
         </div>
 
         {/* Search Input */}
-        <div className="relative w-full sm:w-56">
+        <div className="relative w-full sm:w-48">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filtrer un mot clé..."
-            className="w-full pl-8 pr-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-slate-200 text-[11px] focus:outline-none focus:border-cyan-400"
+            placeholder="Rechercher..."
+            className="w-full pl-8 pr-6 py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-200 text-[10.5px] focus:outline-none focus:border-cyan-400"
           />
           {searchQuery && (
             <button
@@ -296,31 +292,31 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
         </div>
       </div>
 
-      {/* 3. CONTENT AREA: Structured Table or Compact Responsive Cards */}
+      {/* 3. CONTENT AREA */}
       {viewMode === 'table' ? (
-        <div className="glass-panel rounded-2xl border border-slate-800/90 bg-slate-950/85 overflow-hidden shadow-xl">
-          {/* Scrollable Container with max height to avoid page overflowing */}
-          <div className="overflow-x-auto max-h-[460px] overflow-y-auto">
-            <table className="w-full text-left font-mono text-[11px] border-collapse min-w-[700px]">
-              <thead className="bg-slate-900/95 text-slate-400 uppercase text-[9.5px] border-b border-slate-800 sticky top-0 z-10 backdrop-blur-md">
+        <div className="glass-panel rounded-xl border border-slate-800/90 bg-slate-950/90 overflow-hidden shadow-lg w-full max-w-full">
+          {/* Scrollable Container with responsive horizontal scroll */}
+          <div className="w-full overflow-x-auto max-h-[50vh] overflow-y-auto">
+            <table className="w-full text-left font-mono text-[10.5px] border-collapse min-w-[620px]">
+              <thead className="bg-slate-900 text-slate-400 uppercase text-[9px] border-b border-slate-800 sticky top-0 z-10">
                 <tr>
-                  <th className="py-2.5 px-3 w-28">Horodatage</th>
-                  <th className="py-2.5 px-2.5 w-20 text-right">Tension</th>
-                  <th className="py-2.5 px-2.5 w-20 text-right">Courant</th>
-                  <th className="py-2.5 px-2.5 w-24 text-right">Puissance</th>
-                  <th className="py-2.5 px-2.5 w-24 text-right">Énergie</th>
-                  <th className="py-2.5 px-2.5 w-16 text-center">Relais</th>
-                  <th className="py-2.5 px-2.5 w-24 text-center">Statut</th>
-                  <th className="py-2.5 px-3 min-w-[160px]">Message / Événement</th>
+                  <th className="py-2 px-2.5 w-24">Heure</th>
+                  <th className="py-2 px-2 text-right">Tension</th>
+                  <th className="py-2 px-2 text-right">Courant</th>
+                  <th className="py-2 px-2 text-right">Puissance</th>
+                  <th className="py-2 px-2 text-right">Énergie</th>
+                  <th className="py-2 px-2 text-center">Relais</th>
+                  <th className="py-2 px-2 text-center">Statut</th>
+                  <th className="py-2 px-2.5 min-w-[140px]">Événement</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/70 text-slate-300">
                 {filteredRecords.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-slate-500 italic">
-                      <div className="flex flex-col items-center justify-center gap-2">
-                        <ShieldCheck className="w-7 h-7 text-slate-600" />
-                        <span>Aucun enregistrement ne correspond aux critères.</span>
+                    <td colSpan={8} className="p-6 text-center text-slate-500 italic">
+                      <div className="flex flex-col items-center justify-center gap-1.5">
+                        <ShieldCheck className="w-6 h-6 text-slate-600" />
+                        <span>Aucun enregistrement trouvé.</span>
                       </div>
                     </td>
                   </tr>
@@ -335,36 +331,35 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                         key={idx}
                         className={`transition-colors ${
                           isDanger
-                            ? 'bg-rose-950/25 hover:bg-rose-950/35'
+                            ? 'bg-rose-950/20 hover:bg-rose-950/30'
                             : isAttention
-                            ? 'bg-amber-950/20 hover:bg-amber-950/30'
-                            : 'hover:bg-slate-900/60'
+                            ? 'bg-amber-950/15 hover:bg-amber-950/25'
+                            : 'hover:bg-slate-900/50'
                         }`}
                       >
-                        <td className="py-2 px-3 text-slate-400 whitespace-nowrap">
+                        <td className="py-1.5 px-2.5 text-slate-400 whitespace-nowrap">
                           <span className="font-bold text-slate-200">{d.toLocaleTimeString('fr-FR')}</span>
-                          <span className="text-[9.5px] text-slate-500 ml-1.5">{d.toLocaleDateString('fr-FR')}</span>
                         </td>
 
-                        <td className="py-2 px-2.5 font-bold text-cyan-300 text-right whitespace-nowrap">
-                          {rec.tension.toFixed(1)} <span className="text-[9.5px] text-slate-500 font-normal">V</span>
+                        <td className="py-1.5 px-2 font-bold text-cyan-300 text-right whitespace-nowrap">
+                          {rec.tension.toFixed(1)} <span className="text-[8.5px] text-slate-500">V</span>
                         </td>
 
-                        <td className="py-2 px-2.5 font-bold text-amber-300 text-right whitespace-nowrap">
-                          {rec.courant.toFixed(2)} <span className="text-[9.5px] text-slate-500 font-normal">A</span>
+                        <td className="py-1.5 px-2 font-bold text-amber-300 text-right whitespace-nowrap">
+                          {rec.courant.toFixed(2)} <span className="text-[8.5px] text-slate-500">A</span>
                         </td>
 
-                        <td className="py-2 px-2.5 font-bold text-violet-300 text-right whitespace-nowrap">
-                          {rec.puissance.toFixed(0)} <span className="text-[9.5px] text-slate-500 font-normal">W</span>
+                        <td className="py-1.5 px-2 font-bold text-violet-300 text-right whitespace-nowrap">
+                          {rec.puissance.toFixed(0)} <span className="text-[8.5px] text-slate-500">W</span>
                         </td>
 
-                        <td className="py-2 px-2.5 font-bold text-emerald-300 text-right whitespace-nowrap">
-                          {(rec.energie / 1000).toFixed(3)} <span className="text-[9.5px] text-slate-500 font-normal">kWh</span>
+                        <td className="py-1.5 px-2 font-bold text-emerald-300 text-right whitespace-nowrap">
+                          {(rec.energie / 1000).toFixed(3)} <span className="text-[8.5px] text-slate-500">kWh</span>
                         </td>
 
-                        <td className="py-2 px-2.5 text-center whitespace-nowrap">
+                        <td className="py-1.5 px-2 text-center whitespace-nowrap">
                           <span
-                            className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold border inline-block ${
+                            className={`px-1 py-0.2 rounded text-[8.5px] font-bold border inline-block ${
                               rec.relais
                                 ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
                                 : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
@@ -374,9 +369,9 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                           </span>
                         </td>
 
-                        <td className="py-2 px-2.5 text-center whitespace-nowrap">
+                        <td className="py-1.5 px-2 text-center whitespace-nowrap">
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[9.5px] font-bold border inline-block ${
+                            className={`px-1.5 py-0.2 rounded-full text-[8.5px] font-bold border inline-block ${
                               rec.niveau === 'NORMAL'
                                 ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
                                 : rec.niveau === 'ATTENTION'
@@ -388,9 +383,9 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                           </span>
                         </td>
 
-                        <td className="py-2 px-3 text-slate-300 text-[10.5px]">
-                          <div className="truncate max-w-[260px] sm:max-w-none" title={rec.message}>
-                            {rec.message || 'Fonctionnement standard'}
+                        <td className="py-1.5 px-2.5 text-slate-300 text-[10px]">
+                          <div className="truncate max-w-[200px] sm:max-w-none" title={rec.message}>
+                            {rec.message || 'Nominal'}
                           </div>
                         </td>
                       </tr>
@@ -402,12 +397,12 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
           </div>
         </div>
       ) : (
-        /* Card Grid View */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-[500px] overflow-y-auto pr-1">
+        /* Card Grid View (ideal for mobile screens) */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-[50vh] overflow-y-auto w-full max-w-full">
           {filteredRecords.length === 0 ? (
-            <div className="col-span-full glass-panel p-8 text-center text-slate-500 rounded-2xl border border-slate-800">
-              <ShieldCheck className="w-8 h-8 mx-auto mb-2 text-slate-600" />
-              <span>Aucun enregistrement ne correspond aux critères.</span>
+            <div className="col-span-full glass-panel p-6 text-center text-slate-500 rounded-xl border border-slate-800">
+              <ShieldCheck className="w-6 h-6 mx-auto mb-1 text-slate-600" />
+              <span>Aucun enregistrement trouvé.</span>
             </div>
           ) : (
             filteredRecords.map((rec, idx) => {
@@ -418,25 +413,23 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
               return (
                 <div
                   key={idx}
-                  className={`p-3 rounded-xl border transition-all ${
+                  className={`p-2.5 rounded-xl border transition-all ${
                     isDanger
-                      ? 'bg-rose-950/25 border-rose-500/40 shadow-sm'
+                      ? 'bg-rose-950/25 border-rose-500/40'
                       : isAttention
-                      ? 'bg-amber-950/20 border-amber-500/40 shadow-sm'
+                      ? 'bg-amber-950/20 border-amber-500/40'
                       : 'bg-slate-950/80 border-slate-800/90'
                   }`}
                 >
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-800/80 mb-2">
-                    <div className="flex items-center gap-1.5 text-slate-400 text-[10px]">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-800/80 mb-1.5">
+                    <div className="flex items-center gap-1 text-slate-400 text-[9.5px]">
                       <Clock className="w-3 h-3 text-slate-500" />
                       <span>{d.toLocaleTimeString('fr-FR')}</span>
-                      <span className="text-slate-600">•</span>
-                      <span>{d.toLocaleDateString('fr-FR')}</span>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       <span
-                        className={`px-1.5 py-0.2 rounded text-[9px] font-bold border ${
+                        className={`px-1 py-0.2 rounded text-[8.5px] font-bold border ${
                           rec.relais
                             ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
                             : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
@@ -445,7 +438,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                         {rec.relais ? 'ON' : 'OFF'}
                       </span>
                       <span
-                        className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold border ${
+                        className={`px-1.5 py-0.2 rounded-full text-[8.5px] font-bold border ${
                           rec.niveau === 'NORMAL'
                             ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
                             : rec.niveau === 'ATTENTION'
@@ -458,27 +451,27 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-[11px] mb-2 bg-slate-900/50 p-2 rounded-lg border border-slate-800/60">
+                  <div className="grid grid-cols-2 gap-1.5 text-[10.5px] mb-1.5 bg-slate-900/60 p-1.5 rounded-lg border border-slate-800/60">
                     <div>
-                      <div className="text-[9.5px] text-slate-500 uppercase">Tension</div>
+                      <div className="text-[8.5px] text-slate-500 uppercase">Tension</div>
                       <div className="font-bold text-cyan-300">{rec.tension.toFixed(1)} V</div>
                     </div>
                     <div>
-                      <div className="text-[9.5px] text-slate-500 uppercase">Courant</div>
+                      <div className="text-[8.5px] text-slate-500 uppercase">Courant</div>
                       <div className="font-bold text-amber-300">{rec.courant.toFixed(2)} A</div>
                     </div>
                     <div>
-                      <div className="text-[9.5px] text-slate-500 uppercase">Puissance</div>
+                      <div className="text-[8.5px] text-slate-500 uppercase">Puissance</div>
                       <div className="font-bold text-violet-300">{rec.puissance.toFixed(0)} W</div>
                     </div>
                     <div>
-                      <div className="text-[9.5px] text-slate-500 uppercase">Énergie</div>
+                      <div className="text-[8.5px] text-slate-500 uppercase">Énergie</div>
                       <div className="font-bold text-emerald-300">{(rec.energie / 1000).toFixed(3)} kWh</div>
                     </div>
                   </div>
 
-                  <div className="text-[10.5px] text-slate-300 truncate" title={rec.message}>
-                    {rec.message || 'Fonctionnement standard'}
+                  <div className="text-[10px] text-slate-300 truncate" title={rec.message}>
+                    {rec.message || 'Nominal'}
                   </div>
                 </div>
               );
@@ -487,44 +480,36 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
         </div>
       )}
 
-      {/* 4. PROFESSIONAL RESET CONFIRMATION MODAL */}
+      {/* 4. RESET CONFIRMATION MODAL */}
       {isResetModalOpen && (
         <div
-          className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto animate-fadeIn font-mono"
+          className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-3 overflow-y-auto font-mono"
           onClick={(e) => {
             if (e.target === e.currentTarget) setIsResetModalOpen(false);
           }}
         >
-          <div className="w-full max-w-md glass-panel border border-rose-500/40 rounded-2xl p-4 sm:p-5 relative shadow-[0_0_30px_rgba(244,63,94,0.25)] bg-slate-950 overflow-hidden my-auto">
-            {/* Header */}
-            <div className="flex items-center gap-3 mb-3.5 pb-3 border-b border-slate-800">
-              <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/30 shrink-0">
-                <AlertCircle className="w-5 h-5" />
+          <div className="w-full max-w-sm glass-panel border border-rose-500/40 rounded-2xl p-4 relative bg-slate-950 overflow-hidden shadow-2xl">
+            <div className="flex items-center gap-2.5 mb-3 pb-2.5 border-b border-slate-800">
+              <div className="p-2 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/30 shrink-0">
+                <AlertCircle className="w-4 h-4" />
               </div>
-              <div className="min-w-0">
-                <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider truncate">
-                  RÉINITIALISER LES RAPPORTS
-                </h3>
-                <p className="text-[10.5px] text-slate-400 font-sans truncate">
-                  Maintenance et purge des relevés
-                </p>
-              </div>
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider truncate">
+                RÉINITIALISER LE JOURNAL
+              </h3>
             </div>
 
-            {/* Description */}
-            <div className="space-y-3 text-xs text-slate-300 font-sans leading-relaxed">
+            <div className="space-y-2.5 text-xs text-slate-300 font-sans leading-relaxed">
               <p>
-                Vous êtes sur le point d'effacer les <strong className="text-white">{totalCount} enregistrements</strong> du journal d'audit électrique.
+                Effacer les <strong className="text-white">{totalCount} enregistrements</strong> ?
               </p>
 
-              {/* Energy Counter Reset Option */}
               <div
                 onClick={() => setResetEnergyOption(!resetEnergyOption)}
-                className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 cursor-pointer flex items-center justify-between hover:border-slate-700 transition-all"
+                className="p-2 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer flex items-center justify-between"
               >
-                <div className="text-xs pr-2">
-                  <div className="font-bold text-slate-200">Remise à zéro de l'énergie</div>
-                  <div className="text-[10.5px] text-slate-400">Réinitialise aussi le cumul en kWh</div>
+                <div className="text-xs">
+                  <div className="font-bold text-slate-200">Remise à zéro énergie</div>
+                  <div className="text-[10px] text-slate-400">Réinitialiser le compteur kWh</div>
                 </div>
                 <input
                   type="checkbox"
@@ -533,27 +518,21 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                   className="w-4 h-4 accent-cyan-400 cursor-pointer shrink-0"
                 />
               </div>
-
-              <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10.5px] flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>Action irréversible. Exportez en PDF ou CSV au préalable si nécessaire.</span>
-              </div>
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-slate-800">
+            <div className="flex items-center justify-end gap-2 mt-3.5 pt-2.5 border-t border-slate-800">
               <button
                 onClick={() => setIsResetModalOpen(false)}
-                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-bold cursor-pointer transition-all"
+                className="px-3 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-bold cursor-pointer"
               >
                 Annuler
               </button>
 
               <button
                 onClick={handleConfirmReset}
-                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-lg transition-all active:scale-95"
+                className="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <Trash2 className="w-3 h-3" />
                 <span>Confirmer</span>
               </button>
             </div>
@@ -563,3 +542,4 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
     </div>
   );
 };
+

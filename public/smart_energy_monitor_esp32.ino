@@ -6,10 +6,10 @@
  *  Programme embarqué C++ haute fiabilité pour ESP32 :
  *  - Mode Point d'Accès Wi-Fi Direct (SoftAP) : Crée son propre réseau Wi-Fi autonome
  *    SSID : "SMART_ENERGY_MONITOR" | Mot de passe : "12345678" | IP : 192.168.4.1
- *  - Serveur Web REST API embarqué (Port 80) avec en-têtes CORS (Access-Control-Allow-Origin: *)
+ *  - Serveur Web REST API embarqué (Port 80) avec en-têtes CORS complets
  *  - Contrôle physique immédiat du Relais (Active-LOW optocouplé standard)
  *  - Mesure AC RMS haute précision avec zéro dynamique & détection secteur débranché (0V)
- *  - Mode Hybride (AP + STA optionnel) : accessible sans routeur ou via votre box internet
+ *  - Synchronisation bidirectionnelle : Télémétrie capteurs, Seuils réglables & Commande Relais
  *
  *  Brochage recommandé ESP32 :
  *  - GPIO 26 : Commande Relais (Borne IN du module Relais)
@@ -44,7 +44,7 @@ const int PIN_ZMPT101B   = 34;   // GPIO34 -> Signal Tension ZMPT101B
 const int PIN_ACS712     = 35;   // GPIO35 -> Signal Courant ACS712
 const int PIN_LED_STATUS = 2;    // GPIO2  -> LED témoin
 
-// Logique du Relais (95% des modules Arduino sont ACTIVE-LOW)
+// Logique du Relais (95% des modules Arduino/ESP32 sont ACTIVE-LOW)
 const int RELAIS_NIVEAU_ACTIF = LOW;  // Relais enclenché (Courant passant)
 const int RELAIS_NIVEAU_COUPE = HIGH; // Relais coupé (Circuit ouvert de sécurité)
 
@@ -55,10 +55,11 @@ const float ACS712_SENSIBILITE = 0.100; // Modèle 20A (100 mV/A) | 5A = 0.185 |
 float CALIBRATION_TENSION = 1.00;
 float CALIBRATION_COURANT = 1.00;
 
-// Seuils de sécurité
+// Seuils de sécurité configurables
 float seuilMinVoltage = 185.0; // V
 float seuilMaxVoltage = 253.0; // V
 float seuilMaxCurrent = 10.0;  // A
+bool alertesSonores = true;
 
 // Variables d'état
 bool relaisActif = true;
@@ -154,7 +155,7 @@ void effectuerMesuresAC() {
   }
 
   // 3. PUISSANCES & ÉNERGIE
-  if (tensionActuelle == 0.0 || courantActuel == 0.0) {
+  if (tensionActuelle == 0.0 || courantActuel == 0.0 || !relaisActif) {
     puissanceApparente = 0.0;
     puissanceActive = 0.0;
   } else {
@@ -182,6 +183,9 @@ void effectuerMesuresAC() {
   } else if (tensionActuelle < seuilMinVoltage) {
     etatNiveau = "ATTENTION";
     messageSysteme = "Sous-tension secteur (<" + String((int)seuilMinVoltage) + "V)";
+    if (!modeManuel && relaisActif) {
+      appliquerEtatRelais(false);
+    }
   } else if (courantActuel > seuilMaxCurrent) {
     etatNiveau = "ATTENTION";
     messageSysteme = "Surcharge courant (>" + String(seuilMaxCurrent, 1) + "A)";
@@ -203,8 +207,8 @@ void effectuerMesuresAC() {
 // =========================================================================
 void ajouterHeadersCORS() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
-  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
 }
 
 void handleOptions() {
@@ -212,17 +216,18 @@ void handleOptions() {
   server.send(204);
 }
 
-// GET /data ou GET /api/data : Envoie les données en temps réel au format JSON
+// GET /data ou GET /api/data : Envoie les données en temps réel au format JSON pur
 void handleGetData() {
   ajouterHeadersCORS();
   
   StaticJsonDocument<512> doc;
-  doc["tension"]            = serialized(String(tensionActuelle, 1));
-  doc["courant"]            = serialized(String(courantActuel, 2));
+  // Envoi de vrais nombres décimaux (valeurs numériques conformes JSON standard)
+  doc["tension"]            = round(tensionActuelle * 10.0) / 10.0;
+  doc["courant"]            = round(courantActuel * 100.0) / 100.0;
   doc["puissance"]          = (int)round(puissanceActive);
-  doc["energie"]            = serialized(String(energieCumulWh, 1));
-  doc["frequence"]          = serialized(String(frequenceActuelle, 2));
-  doc["facteurPuissance"]   = serialized(String(facteurPuissance, 2));
+  doc["energie"]            = round(energieCumulWh * 10.0) / 10.0;
+  doc["frequence"]          = round(frequenceActuelle * 10.0) / 10.0;
+  doc["facteurPuissance"]   = round(facteurPuissance * 100.0) / 100.0;
   doc["puissanceApparente"] = (int)round(puissanceApparente);
   doc["temperatureBord"]    = 34.8;
   doc["relais"]             = relaisActif;
@@ -236,21 +241,30 @@ void handleGetData() {
   doc["ip"]                 = WiFi.softAPIP().toString();
 
   JsonObject s = doc.createNestedObject("settings");
-  s["minVoltage"] = seuilMinVoltage;
-  s["maxVoltage"] = seuilMaxVoltage;
-  s["minCurrent"] = 0;
-  s["maxCurrent"] = seuilMaxCurrent;
-  s["soundAlerts"] = true;
+  s["minVoltage"]  = seuilMinVoltage;
+  s["maxVoltage"]  = seuilMaxVoltage;
+  s["minCurrent"]  = 0;
+  s["maxCurrent"]  = seuilMaxCurrent;
+  s["soundAlerts"] = alertesSonores;
 
   String reponse;
   serializeJson(doc, reponse);
   server.send(200, "application/json", reponse);
 }
 
-// GET /relais?etat=on|off|auto : Pilotage du Relais
+// GET/POST /relais?etat=on|off|auto : Pilotage du Relais
 void handleRelais() {
   ajouterHeadersCORS();
-  String etat = server.arg("etat");
+  String etat = "";
+  
+  if (server.hasArg("etat")) {
+    etat = server.arg("etat");
+  } else if (server.hasArg("plain")) {
+    StaticJsonDocument<256> body;
+    if (!deserializeJson(body, server.arg("plain"))) {
+      if (body.containsKey("etat")) etat = body["etat"].as<String>();
+    }
+  }
   etat.toLowerCase();
 
   if (etat == "on") {
@@ -264,15 +278,15 @@ void handleRelais() {
   } else if (etat == "auto") {
     modeManuel = false;
     messageSysteme = "Mode Automatique réactivé";
-    if (etatNiveau == "NORMAL") {
+    if (etatNiveau == "NORMAL" && tensionActuelle >= seuilMinVoltage && tensionActuelle <= seuilMaxVoltage) {
       appliquerEtatRelais(true);
     }
   }
 
   StaticJsonDocument<256> doc;
-  doc["status"] = "ok";
-  doc["relais"] = relaisActif;
-  doc["manuel"] = modeManuel;
+  doc["status"]  = "ok";
+  doc["relais"]  = relaisActif;
+  doc["manuel"]  = modeManuel;
   doc["message"] = messageSysteme;
 
   String reponse;
@@ -306,21 +320,40 @@ void handleCalibrer() {
 // POST ou GET /settings : Mise à jour des seuils
 void handleSettings() {
   ajouterHeadersCORS();
+  bool misAJour = false;
+
   if (server.hasArg("plain")) {
     StaticJsonDocument<256> doc;
     DeserializationError err = deserializeJson(doc, server.arg("plain"));
     if (!err) {
-      if (doc.containsKey("minVoltage")) seuilMinVoltage = doc["minVoltage"];
-      if (doc.containsKey("maxVoltage")) seuilMaxVoltage = doc["maxVoltage"];
-      if (doc.containsKey("maxCurrent")) seuilMaxCurrent = doc["maxCurrent"];
+      if (doc.containsKey("minVoltage")) { seuilMinVoltage = doc["minVoltage"]; misAJour = true; }
+      if (doc.containsKey("maxVoltage")) { seuilMaxVoltage = doc["maxVoltage"]; misAJour = true; }
+      if (doc.containsKey("maxCurrent")) { seuilMaxCurrent = doc["maxCurrent"]; misAJour = true; }
+      if (doc.containsKey("soundAlerts")) { alertesSonores = doc["soundAlerts"]; misAJour = true; }
     }
-  } else {
-    if (server.hasArg("minVoltage")) seuilMinVoltage = server.arg("minVoltage").toFloat();
-    if (server.hasArg("maxVoltage")) seuilMaxVoltage = server.arg("maxVoltage").toFloat();
-    if (server.hasArg("maxCurrent")) seuilMaxCurrent = server.arg("maxCurrent").toFloat();
   }
   
-  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Paramètres enregistrés\"}");
+  if (server.hasArg("minVoltage")) { seuilMinVoltage = server.arg("minVoltage").toFloat(); misAJour = true; }
+  if (server.hasArg("maxVoltage")) { seuilMaxVoltage = server.arg("maxVoltage").toFloat(); misAJour = true; }
+  if (server.hasArg("maxCurrent")) { seuilMaxCurrent = server.arg("maxCurrent").toFloat(); misAJour = true; }
+
+  if (misAJour) {
+    Serial.printf("[SETTINGS] Nouveaux seuils: MinV=%.1fV, MaxV=%.1fV, MaxI=%.1fA\n",
+                  seuilMinVoltage, seuilMaxVoltage, seuilMaxCurrent);
+    // Réévaluation immédiate de la sécurité
+    effectuerMesuresAC();
+  }
+  
+  StaticJsonDocument<256> doc;
+  doc["status"] = "ok";
+  doc["message"] = "Paramètres enregistrés et appliqués";
+  doc["minVoltage"] = seuilMinVoltage;
+  doc["maxVoltage"] = seuilMaxVoltage;
+  doc["maxCurrent"] = seuilMaxCurrent;
+
+  String reponse;
+  serializeJson(doc, reponse);
+  server.send(200, "application/json", reponse);
 }
 
 // GET /ping : Test de liaison
@@ -383,7 +416,7 @@ void setup() {
 
   if (apSuccess) {
     Serial.printf("[Wi-Fi AP] Point d'accès démarré avec succès !\n");
-    Serial.printf("[Wi-Fi AP] SSID     : %s\n", AP_SSID);
+    Serial.printf("[Wi-Fi AP] SSID         : %s\n", AP_SSID);
     Serial.printf("[Wi-Fi AP] Mot de passe : %s\n", AP_PASSWORD);
     Serial.print(  "[Wi-Fi AP] Adresse IP   : ");
     Serial.println(WiFi.softAPIP());
@@ -415,6 +448,7 @@ void setup() {
   server.on("/relais", HTTP_OPTIONS, handleOptions);
   server.on("/settings", HTTP_OPTIONS, handleOptions);
   server.on("/ping", HTTP_OPTIONS, handleOptions);
+  server.on("/calibrer", HTTP_OPTIONS, handleOptions);
 
   server.begin();
   Serial.println("[HTTP] Serveur Web REST API démarré sur le port 80 !");
@@ -441,3 +475,4 @@ void loop() {
 
   delay(2);
 }
+

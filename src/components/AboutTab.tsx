@@ -191,12 +191,12 @@ void ajouterHeadersCORS() {
 void handleGetData() {
   ajouterHeadersCORS();
   StaticJsonDocument<512> doc;
-  doc["tension"]            = serialized(String(tensionActuelle, 1));
-  doc["courant"]            = serialized(String(courantActuel, 2));
+  doc["tension"]            = (float)((int)(tensionActuelle * 10.0 + 0.5)) / 10.0;
+  doc["courant"]            = (float)((int)(courantActuel * 100.0 + 0.5)) / 100.0;
   doc["puissance"]          = (int)round(puissanceActive);
-  doc["energie"]            = serialized(String(energieCumulWh, 1));
-  doc["frequence"]          = serialized(String(frequenceActuelle, 2));
-  doc["facteurPuissance"]   = serialized(String(facteurPuissance, 2));
+  doc["energie"]            = (float)((int)(energieCumulWh * 10.0 + 0.5)) / 10.0;
+  doc["frequence"]          = (float)((int)(frequenceActuelle * 10.0 + 0.5)) / 10.0;
+  doc["facteurPuissance"]   = (float)((int)(facteurPuissance * 100.0 + 0.5)) / 100.0;
   doc["puissanceApparente"] = (int)round(puissanceApparente);
   doc["temperatureBord"]    = 34.8;
   doc["relais"]             = relaisActif;

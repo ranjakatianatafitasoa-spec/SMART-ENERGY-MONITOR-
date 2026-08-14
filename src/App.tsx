@@ -7,6 +7,7 @@ import { ChartsGrid } from './components/ChartsGrid';
 import { LiveEvolutionCard } from './components/LiveEvolutionCard';
 import { RelayPage } from './components/RelayPage';
 import { SettingsTab, SystemSettings } from './components/SettingsTab';
+import { ReportsTab } from './components/ReportsTab';
 import { AboutTab } from './components/AboutTab';
 import { BottomNav } from './components/BottomNav';
 import { EnergyModal } from './components/EnergyModal';
@@ -18,7 +19,7 @@ import {
   generateFullReportPdfHtml,
   exportOrPrintPdf,
 } from './utils/pdfUtils';
-import { FileText, Download, CheckCircle2, ShieldCheck, Shield, ChevronRight, Zap, AlertTriangle, ZapOff, Power } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 const INTERVALLE_RELEVE_MS = 60000; // 1 minute snapshot for PDF history
 
@@ -94,7 +95,6 @@ export default function App() {
       incident: false,
     },
   ]);
-  const [incidentFilter, setIncidentFilter] = useState<'all' | 'incidents'>('all');
   const dernierNiveauRef = useRef<string | null>('NORMAL');
   const dernierRelaisRef = useRef<boolean | null>(true);
 
@@ -242,120 +242,193 @@ export default function App() {
     dernierRelaisRef.current = newData.relais;
   }, [settings.soundAlerts, playAlertSound, showToast]);
 
-  // Data Fetching & Live Simulation Loop
+  // Data Fetching Loop supporting Direct ESP32 AP Mode & Server Proxy
   useEffect(() => {
-    const interval = setInterval(() => {
-      const url = simulationMode !== 'normal' ? '/data?simulate=true' : '/data';
-      fetch(url)
-        .then((res) => res.json())
-        .then((fetchedData: ESP32Data) => {
-          let updatedData = { ...fetchedData };
-          // If simulation mode is active on frontend, overlay simulation fault
-          if (simulationMode === 'outage') {
-            updatedData.tension = 0;
-            updatedData.courant = 0;
-            updatedData.puissance = 0;
-            updatedData.niveau = 'DANGER';
-            updatedData.message = 'Coupure secteur (0V) simulée';
-          } else if (simulationMode === 'overvoltage') {
-            updatedData.tension = 265.4;
-            updatedData.niveau = 'DANGER';
-            updatedData.message = 'Surtension secteur critique (265.4V > 253V)';
-          } else if (simulationMode === 'overcurrent') {
-            updatedData.courant = 5.50;
-            updatedData.puissance = Math.round(updatedData.tension * 5.5);
-            updatedData.niveau = 'ATTENTION';
-            updatedData.message = 'Surcharge courant élevée (5.50A)';
-          }
+    let isMounted = true;
 
-          setData(updatedData);
-          if (fetchedData.settings) {
-            setSettings((prev) => {
-              const s = fetchedData.settings!;
-              if (
-                prev.minVoltage === s.minVoltage &&
-                prev.maxVoltage === s.maxVoltage &&
-                prev.minCurrent === s.minCurrent &&
-                prev.maxCurrent === s.maxCurrent &&
-                prev.soundAlerts === s.soundAlerts
-              ) {
-                return prev;
-              }
-              return { ...prev, ...s };
-            });
+    const interval = setInterval(async () => {
+      const curSettings = settingsRef.current;
+      const targetIp = curSettings.connectionMode === 'custom' && curSettings.esp32Ip
+        ? curSettings.esp32Ip.replace(/^http:\/\//, '')
+        : '192.168.4.1';
+
+      let fetched: ESP32Data | null = null;
+
+      // 1. If in AP or custom mode, attempt DIRECT fetch to the ESP32 WebServer (e.g. 192.168.4.1)
+      if (curSettings.connectionMode !== 'server') {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 1200);
+          const directRes = await fetch(`http://${targetIp}/data`, {
+            signal: controller.signal,
+            mode: 'cors',
+          });
+          clearTimeout(timeoutId);
+          if (directRes.ok) {
+            fetched = await directRes.json();
+            if (fetched) {
+              fetched.wifiConnected = true;
+              fetched.esp32Connected = true;
+              fetched.connectionMode = curSettings.connectionMode || 'ap';
+            }
           }
-          setHistoryV((prev) => [...prev.slice(-59), updatedData.tension]);
-          setHistoryI((prev) => [...prev.slice(-59), updatedData.courant]);
-          setHistoryP((prev) => [...prev.slice(-59), updatedData.puissance]);
-          setHistoryE((prev) => [...prev.slice(-59), updatedData.energie]);
-          recordIfPertinent(updatedData);
-        })
-        .catch(() => {
-          // Offline browser fallback
-          setData((prev) => ({
-            ...prev,
-            wifiConnected: false,
-            esp32Connected: false,
-            message: 'Application Hors-Ligne (Erreur réseau)',
-          }));
-        });
+        } catch {
+          // Direct ESP32 AP unreachable -> continue to proxy / local endpoint
+        }
+      }
+
+      // 2. Fallback to Local Server Proxy if direct AP did not respond
+      if (!fetched) {
+        try {
+          const url = simulationMode !== 'normal' ? '/data?simulate=true' : '/data';
+          const proxyRes = await fetch(url);
+          if (proxyRes.ok) {
+            fetched = await proxyRes.json();
+          }
+        } catch {
+          // Server offline
+        }
+      }
+
+      if (!isMounted) return;
+
+      if (fetched) {
+        let updatedData: ESP32Data = { ...fetched };
+
+        // Simulation overlay if triggered from UI
+        if (simulationMode === 'outage') {
+          updatedData.tension = 0;
+          updatedData.courant = 0;
+          updatedData.puissance = 0;
+          updatedData.niveau = 'DANGER';
+          updatedData.message = 'Coupure secteur (0V) simulée';
+        } else if (simulationMode === 'overvoltage') {
+          updatedData.tension = 265.4;
+          updatedData.niveau = 'DANGER';
+          updatedData.message = 'Surtension secteur critique (265.4V > 253V)';
+        } else if (simulationMode === 'overcurrent') {
+          updatedData.courant = 5.50;
+          updatedData.puissance = Math.round(updatedData.tension * 5.5);
+          updatedData.niveau = 'ATTENTION';
+          updatedData.message = 'Surcharge courant élevée (5.50A)';
+        }
+
+        setData(updatedData);
+
+        if (fetched.settings) {
+          setSettings((prev) => {
+            const s = fetched.settings!;
+            if (
+              prev.minVoltage === s.minVoltage &&
+              prev.maxVoltage === s.maxVoltage &&
+              prev.minCurrent === s.minCurrent &&
+              prev.maxCurrent === s.maxCurrent &&
+              prev.soundAlerts === s.soundAlerts
+            ) {
+              return prev;
+            }
+            return { ...prev, ...s };
+          });
+        }
+
+        setHistoryV((prev) => [...prev.slice(-59), updatedData.tension]);
+        setHistoryI((prev) => [...prev.slice(-59), updatedData.courant]);
+        setHistoryP((prev) => [...prev.slice(-59), updatedData.puissance]);
+        setHistoryE((prev) => [...prev.slice(-59), updatedData.energie]);
+        recordIfPertinent(updatedData);
+      } else {
+        // Disconnected state
+        setData((prev) => ({
+          ...prev,
+          wifiConnected: false,
+          esp32Connected: false,
+          tension: 0,
+          courant: 0,
+          puissance: 0,
+          niveau: 'ATTENTION',
+          message: 'En attente de connexion Wi-Fi au réseau "SMART_ENERGY_MONITOR"...',
+        }));
+      }
     }, 1000);
 
-    return () => clearInterval(interval);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, [simulationMode, recordIfPertinent]);
 
   const handleUpdateSettings = (newSettings: SystemSettings) => {
     setSettings(newSettings);
     settingsRef.current = newSettings;
+
+    // Send to Local Server
     fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newSettings),
     }).catch(() => {});
+
+    // Send directly to ESP32 AP if configured
+    const targetIp = newSettings.esp32Ip || '192.168.4.1';
+    fetch(`http://${targetIp}/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newSettings),
+      mode: 'cors',
+    }).catch(() => {});
   };
 
-  // Relay Actions
+  // Relay Actions (Direct Hardware & Local Server Broadcast)
   const handleToggleRelay = () => {
-    setData((prev) => {
-      const nextRelais = !prev.relais;
-      showToast(
-        nextRelais ? 'Relais ACTIVÉ (ON) - Sortie sous tension' : 'Relais COUPÉ (OFF) - Sortie hors tension',
-        nextRelais ? 'success' : 'warning'
-      );
-      return {
-        ...prev,
-        relais: nextRelais,
-        manuel: true,
-      };
-    });
-    fetch(`/relais?etat=${!data.relais ? 'on' : 'off'}`).catch(() => {});
+    const nextRelais = !data.relais;
+    const targetIp = settingsRef.current.esp32Ip || '192.168.4.1';
+
+    setData((prev) => ({
+      ...prev,
+      relais: nextRelais,
+      manuel: true,
+      message: nextRelais ? 'Relais enclenché (Manuel)' : 'Relais coupé (Manuel)',
+    }));
+
+    showToast(
+      nextRelais ? 'Relais ACTIVÉ (ON) - Sortie sous tension' : 'Relais COUPÉ (OFF) - Sortie hors tension',
+      nextRelais ? 'success' : 'warning'
+    );
+
+    // 1. Direct command to ESP32 WebServer (Fastest < 30ms)
+    fetch(`http://${targetIp}/relais?etat=${nextRelais ? 'on' : 'off'}`, { mode: 'cors' }).catch(() => {});
+    // 2. Backup command to server
+    fetch(`/relais?etat=${nextRelais ? 'on' : 'off'}`).catch(() => {});
   };
 
   const handleRepasserAuto = () => {
+    const targetIp = settingsRef.current.esp32Ip || '192.168.4.1';
     setData((prev) => ({
       ...prev,
       manuel: false,
     }));
     showToast('Mode AUTOMATIQUE réactivé avec succès', 'info');
+    fetch(`http://${targetIp}/relais?etat=auto`, { mode: 'cors' }).catch(() => {});
     fetch('/relais?etat=auto').catch(() => {});
   };
 
   const handleRecalibrer = () => {
-    showToast('Recalibration en cours (3s, ne rien brancher)…', 'info');
+    const targetIp = settingsRef.current.esp32Ip || '192.168.4.1';
+    showToast('Recalibration des capteurs en cours…', 'info');
+    fetch(`http://${targetIp}/calibrer`, { mode: 'cors' }).catch(() => {});
     fetch('/calibrer')
       .then((res) => res.text())
       .then(() => {
-        showToast('Capteurs recalibrés avec succès', 'success');
+        showToast('Capteurs et compteur recalibrés avec succès', 'success');
       })
       .catch(() => {
         setTimeout(() => {
           showToast('Capteurs recalibrés avec succès', 'success');
-        }, 1200);
+        }, 1000);
       });
   };
 
-  const handleNavigateToReports = (filter: 'all' | 'incidents' = 'all') => {
-    setIncidentFilter(filter);
+  const handleNavigateToReports = () => {
     handleSelectTab('reports');
   };
 
@@ -384,11 +457,17 @@ export default function App() {
     }, 100);
   };
 
-  const incidentCount = historiqueRecords.filter((r) => r.incident).length;
-
-  const filteredHistory = incidentFilter === 'incidents'
-    ? historiqueRecords.filter((r) => r.incident)
-    : historiqueRecords;
+  const handleClearReports = (resetEnergyToo: boolean) => {
+    setHistoriqueRecords([]);
+    if (resetEnergyToo) {
+      setData((prev) => ({ ...prev, energie: 0 }));
+      setHistoryE([]);
+      energieSimRef.current = 0;
+      const targetIp = settingsRef.current.esp32Ip || '192.168.4.1';
+      fetch(`http://${targetIp}/calibrer`, { mode: 'cors' }).catch(() => {});
+      fetch('/calibrer').catch(() => {});
+    }
+  };
 
   return (
     <div className="max-w-[1300px] mx-auto p-2 sm:p-3.5 pb-20 sm:pb-4 min-h-screen flex flex-col justify-start">
@@ -456,101 +535,12 @@ export default function App() {
 
       {/* PAGE 4: RAPPORTS & INCIDENTS */}
       {activeTab === 'reports' && (
-        <div className="glass-panel p-5 rounded-2xl space-y-4 animate-fadeIn">
-          <div className="flex items-center justify-between gap-3 flex-wrap border-b border-slate-800 pb-4">
-            <div>
-              <h2 className="text-base font-bold font-mono text-white flex items-center gap-2">
-                <FileText className="w-5 h-5 text-violet-400" />
-                JOURNAL D'INCIDENTS ET ÉVÉNEMENTS RÉSEAU
-              </h2>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIncidentFilter('all')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold transition-all cursor-pointer ${
-                  incidentFilter === 'all'
-                    ? 'bg-violet-600 text-white shadow-md'
-                    : 'bg-slate-900 text-slate-400 hover:text-white'
-                }`}
-              >
-                Tous ({historiqueRecords.length})
-              </button>
-              <button
-                onClick={() => setIncidentFilter('incidents')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold transition-all cursor-pointer ${
-                  incidentFilter === 'incidents'
-                    ? 'bg-rose-600 text-white shadow-md'
-                    : 'bg-slate-900 text-slate-400 hover:text-white'
-                }`}
-              >
-                Incidents ({incidentCount})
-              </button>
-
-              <button
-                onClick={handleGenererRapportPDF}
-                className="px-3.5 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-mono text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-lg"
-              >
-                <Download className="w-3.5 h-3.5" /> Exporter PDF
-              </button>
-            </div>
-          </div>
-
-          {/* Table Container */}
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
-            <table className="w-full text-left font-mono text-xs">
-              <thead className="bg-slate-900/90 text-slate-400 uppercase text-[10px] border-b border-slate-800">
-                <tr>
-                  <th className="p-3">Horodatage</th>
-                  <th className="p-3">Tension</th>
-                  <th className="p-3">Courant</th>
-                  <th className="p-3">Puissance</th>
-                  <th className="p-3">Énergie</th>
-                  <th className="p-3">Niveau</th>
-                  <th className="p-3">Message</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800 text-slate-300">
-                {filteredHistory.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="p-6 text-center text-slate-500 italic">
-                      Aucun enregistrement trouvé dans l'historique actuel.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredHistory.map((rec, idx) => (
-                    <tr
-                      key={idx}
-                      className={rec.incident ? 'bg-rose-500/10 text-white font-medium' : 'hover:bg-white/5'}
-                    >
-                      <td className="p-3 text-slate-400 text-[11px]">
-                        {new Date(rec.t).toLocaleTimeString('fr-FR')}
-                      </td>
-                      <td className="p-3 text-cyan-300">{rec.tension.toFixed(1)} V</td>
-                      <td className="p-3 text-amber-300">{rec.courant.toFixed(2)} A</td>
-                      <td className="p-3 text-violet-300">{rec.puissance.toFixed(0)} W</td>
-                      <td className="p-3 text-emerald-300">{(rec.energie / 1000).toFixed(3)} kWh</td>
-                      <td className="p-3">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            rec.niveau === 'NORMAL'
-                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                              : rec.niveau === 'ATTENTION'
-                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                              : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                          }`}
-                        >
-                          {rec.niveau}
-                        </span>
-                      </td>
-                      <td className="p-3 text-slate-300 text-[11px]">{rec.message}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <ReportsTab
+          records={historiqueRecords}
+          onClearReports={handleClearReports}
+          onExportPdf={handleGenererRapportPDF}
+          showToast={showToast}
+        />
       )}
 
       {/* PAGE 4: PARAMÈTRES */}

@@ -1,124 +1,112 @@
 /*
  * =========================================================================================
- *                   SMART ENERGY MONITOR - CODE ARDUINO ESP32 (V3.0 ROBUSTE)
+ *             SMART ENERGY MONITOR - ESP32 POINT D'ACCÈS WI-FI DIRECT (V4.0 AP/STA)
  * =========================================================================================
  *  Description :
- *  Programme embarqué C++ haute précision pour ESP32 :
- *  - Mesure AC RMS réelle par échantillonnage sinusoïdal synchrone 50Hz/60Hz
- *  - Détection automatique du secteur débranché (Zéro dynamique & filtre bruit de fond)
- *  - Support des modules Relais (Active-LOW standard ou Active-HIGH)
- *  - Synchronisation bidirectionnelle Wi-Fi / HTTP REST avec le Dashboard Web
+ *  Programme embarqué C++ haute fiabilité pour ESP32 :
+ *  - Mode Point d'Accès Wi-Fi Direct (SoftAP) : Crée son propre réseau Wi-Fi autonome
+ *    SSID : "SMART_ENERGY_MONITOR" | Mot de passe : "12345678" | IP : 192.168.4.1
+ *  - Serveur Web REST API embarqué (Port 80) avec en-têtes CORS (Access-Control-Allow-Origin: *)
+ *  - Contrôle physique immédiat du Relais (Active-LOW optocouplé standard)
+ *  - Mesure AC RMS haute précision avec zéro dynamique & détection secteur débranché (0V)
+ *  - Mode Hybride (AP + STA optionnel) : accessible sans routeur ou via votre box internet
  *
  *  Brochage recommandé ESP32 :
  *  - GPIO 26 : Commande Relais (Borne IN du module Relais)
- *  - GPIO 34 : Sortie analogique du module Tension ZMPT101B (ADC1_CH6)
- *  - GPIO 35 : Sortie analogique du module Courant ACS712 (ADC1_CH7)
- *  - GPIO 2  : LED témoin Wi-Fi
+ *  - GPIO 34 : Sortie analogique ZMPT101B (ADC1_CH6)
+ *  - GPIO 35 : Sortie analogique ACS712 (ADC1_CH7)
+ *  - GPIO 2  : LED témoin d'activité
  * =========================================================================================
  */
 
 #include <WiFi.h>
-#include <HTTPClient.h>
+#include <WebServer.h>
 #include <ArduinoJson.h>
 
 // =========================================================================
-// 1. CONFIGURATION WI-FI & ADRESSE DU SERVEUR
+// 1. CONFIGURATION DU POINT D'ACCÈS WI-FI DIRECT (ESP32 SOFT-AP)
 // =========================================================================
-const char* WIFI_SSID     = "VOTRE_WIFI_SSID";       // Nom de votre réseau Wi-Fi
-const char* WIFI_PASSWORD = "VOTRE_WIFI_PASSWORD";   // Mot de passe Wi-Fi
+const char* AP_SSID     = "SMART_ENERGY_MONITOR"; // Nom du réseau Wi-Fi émis par l'ESP32
+const char* AP_PASSWORD = "12345678";             // Mot de passe (8 caractères minimum)
+const IPAddress AP_IP(192, 168, 4, 1);            // IP fixe du Point d'Accès
+const IPAddress AP_GATEWAY(192, 168, 4, 1);
+const IPAddress AP_SUBNET(255, 255, 255, 0);
 
-// Adresse IP locale de votre ordinateur hébergeant l'application (ou URL Cloud)
-// Exemple : "http://192.168.1.50:3000/api/esp32/data"
-const char* SERVER_URL    = "http://192.168.1.50:3000/api/esp32/data";
-
-// =========================================================================
-// 2. CONFIGURATION MATÉRIELLE & BROCHES (PINS)
-// =========================================================================
-const int PIN_RELAIS     = 26;   // GPIO26 -> Broche IN du Relais
-const int PIN_ZMPT101B   = 34;   // GPIO34 -> Signal OUT du ZMPT101B (Entrée ADC1)
-const int PIN_ACS712     = 35;   // GPIO35 -> Signal OUT de l'ACS712 (Entrée ADC1)
-const int PIN_LED_STATUS = 2;    // GPIO2  -> LED témoin intégrée ESP32
+// (Optionnel) Réseau Wi-Fi local de votre Box Internet si vous souhaitez le mode Hybride
+const char* STA_SSID     = "VOTRE_WIFI_BOX";      // Laissez vide si utilisation exclusive en AP
+const char* STA_PASSWORD = "VOTRE_WIFI_PASSWORD";
 
 // =========================================================================
-// 3. CONFIGURATION DU TYPE DE RELAIS (ACTIVE LOW / ACTIVE HIGH)
+// 2. CONFIGURATION MATÉRIELLE & PINS
 // =========================================================================
-// 95% des modules relais Arduino (Songle optocouplés) sont ACTIVE-LOW :
-// - Commande LOW (0V)  -> Relais ENCLENCHÉ (Passant, COM connecté à NO)
-// - Commande HIGH (3.3V/5V) -> Relais COUPÉ (Ouvert, sécurité)
-// Si votre module est Active-HIGH, changez cette constante à HIGH.
-const int RELAIS_NIVEAU_ACTIF = LOW; 
-const int RELAIS_NIVEAU_COUPE = HIGH;
+const int PIN_RELAIS     = 26;   // GPIO26 -> IN du Relais
+const int PIN_ZMPT101B   = 34;   // GPIO34 -> Signal Tension ZMPT101B
+const int PIN_ACS712     = 35;   // GPIO35 -> Signal Courant ACS712
+const int PIN_LED_STATUS = 2;    // GPIO2  -> LED témoin
+
+// Logique du Relais (95% des modules Arduino sont ACTIVE-LOW)
+const int RELAIS_NIVEAU_ACTIF = LOW;  // Relais enclenché (Courant passant)
+const int RELAIS_NIVEAU_COUPE = HIGH; // Relais coupé (Circuit ouvert de sécurité)
 
 // =========================================================================
-// 4. PARAMÈTRES D'ÉTALONNAGE & SEUILS DE SÉCURITÉ
+// 3. PARAMÈTRES DE MESURE & VARIABLES GLOBALES
 // =========================================================================
-// Modèle ACS712 : 5A = 0.185 V/A | 20A = 0.100 V/A | 30A = 0.066 V/A
-const float ACS712_SENSIBILITE = 0.100; // Modèle 20A (100 mV par Ampère)
-
-// Facteurs d'étalonnage (Ajustez si nécessaire avec un multimètre de référence)
+const float ACS712_SENSIBILITE = 0.100; // Modèle 20A (100 mV/A) | 5A = 0.185 | 30A = 0.066
 float CALIBRATION_TENSION = 1.00;
 float CALIBRATION_COURANT = 1.00;
 
-// Seuils par défaut (synchronisés automatiquement avec l'application)
+// Seuils de sécurité
 float seuilMinVoltage = 185.0; // V
 float seuilMaxVoltage = 253.0; // V
 float seuilMaxCurrent = 10.0;  // A
 
-// État local du Relais et accumulateurs
-bool relaisLocalActif = true;
-float cumulEnergieWh = 0.0;
-unsigned long dernierEnvoiMs = 0;
-unsigned long dernierCalculEnergieMs = 0;
-const unsigned long INTERVALLE_ENVOI_MS = 1000; // Envoi chaque 1 seconde
+// Variables d'état
+bool relaisActif = true;
+bool modeManuel = false;
+float tensionActuelle = 0.0;
+float courantActuel = 0.0;
+float puissanceActive = 0.0;
+float puissanceApparente = 0.0;
+float energieCumulWh = 0.0;
+float frequenceActuelle = 50.0;
+float facteurPuissance = 0.98;
+String etatNiveau = "NORMAL";
+String messageSysteme = "Système nominal (ESP32 AP)";
 
-// Structure des mesures
-struct MesuresAC {
-  float tensionRMS;
-  float courantRMS;
-  float puissanceActive;
-  float puissanceApparente;
-  float facteurPuissance;
-  float frequence;
-};
+unsigned long dernierCalculMs = 0;
+unsigned long dernierEchantillonnageMs = 0;
+
+// Instanciation du Serveur Web sur le port 80
+WebServer server(80);
 
 // =========================================================================
-// 5. FONCTION DE PILOTAGE PHYSIQUE DU RELAIS
+// 4. PILOTAGE PHYSIQUE DU RELAIS
 // =========================================================================
 void appliquerEtatRelais(bool activer) {
-  relaisLocalActif = activer;
-  if (activer) {
-    digitalWrite(PIN_RELAIS, RELAIS_NIVEAU_ACTIF);
-    Serial.println("[RELAIS] -> ACTIVÉ (Courant passant)");
-  } else {
-    digitalWrite(PIN_RELAIS, RELAIS_NIVEAU_COUPE);
-    Serial.println("[RELAIS] -> COUPÉ / SÉCURITÉ (Circuit ouvert)");
-  }
+  relaisActif = activer;
+  digitalWrite(PIN_RELAIS, activer ? RELAIS_NIVEAU_ACTIF : RELAIS_NIVEAU_COUPE);
+  Serial.printf("[RELAIS] -> %s (GPIO %d = %s)\n",
+                activer ? "ACTIVÉ (PASSANT)" : "COUPÉ (SÉCURITÉ)",
+                PIN_RELAIS, activer ? "LOW" : "HIGH");
 }
 
 // =========================================================================
-// 6. MESURE HAUTE PRÉCISION AVEC ÉLIMINATION DU BRUIT (SECTEUR DÉBRANCHÉ)
+// 5. ÉCHANTILLONNAGE AC RMS & FILTRE BRUIT (SECTEUR DÉBRANCHÉ = 0V)
 // =========================================================================
-MesuresAC lireMesuresAC() {
-  MesuresAC mes;
-  mes.frequence = 50.0;
-  mes.facteurPuissance = 0.98;
-
-  const int NB_ECHANTILLONS = 400; // Échantillons sur ~2 périodes complètes de 50Hz (40ms)
+void effectuerMesuresAC() {
+  const int NB_ECH = 400; // Échantillonnage sur 2 périodes à 50Hz (40ms)
   int minV = 4095, maxV = 0;
   int minI = 4095, maxI = 0;
   long sumV = 0, sumI = 0;
-  
-  int bufferV[NB_ECHANTILLONS];
-  int bufferI[NB_ECHANTILLONS];
+  int bufV[NB_ECH];
+  int bufI[NB_ECH];
 
-  // Passe 1 : Acquisition rapide et recherche de la composante continue (offset moyen)
-  for (int j = 0; j < NB_ECHANTILLONS; j++) {
+  for (int j = 0; j < NB_ECH; j++) {
     int v = analogRead(PIN_ZMPT101B);
     int i = analogRead(PIN_ACS712);
 
-    bufferV[j] = v;
-    bufferI[j] = i;
-
+    bufV[j] = v;
+    bufI[j] = i;
     sumV += v;
     sumI += i;
 
@@ -127,71 +115,240 @@ MesuresAC lireMesuresAC() {
     if (i < minI) minI = i;
     if (i > maxI) maxI = i;
 
-    delayMicroseconds(95); // ~10 kHz d'échantillonnage
+    delayMicroseconds(95); // ~10 kHz
   }
 
-  // Calcul de la composante continue réelle (Zéro virtuel dynamique)
-  float offsetV = (float)sumV / NB_ECHANTILLONS;
-  float offsetI = (float)sumI / NB_ECHANTILLONS;
+  float offsetV = (float)sumV / NB_ECH;
+  float offsetI = (float)sumI / NB_ECH;
 
-  // Calcul de l'amplitude crête à crête
   int vPP = maxV - minV;
   int iPP = maxI - minI;
 
-  // --- TRAITEMENT DE LA TENSION SECTEUR (ZMPT101B) ---
-  // Si le signal crête à crête est inférieur au seuil de bruit ADC (< 25 counts), le secteur est DÉBRANCHÉ (0V réel)
+  // 1. TENSION SECTEUR
   if (vPP < 25) {
-    mes.tensionRMS = 0.0;
+    tensionActuelle = 0.0;
   } else {
-    // Calcul RMS réel en soustrayant le vrai offset dynamique
-    double sumSquaresV = 0;
-    for (int j = 0; j < NB_ECHANTILLONS; j++) {
-      double diffV = (double)bufferV[j] - offsetV;
-      sumSquaresV += (diffV * diffV);
+    double sqV = 0;
+    for (int j = 0; j < NB_ECH; j++) {
+      double diff = (double)bufV[j] - offsetV;
+      sqV += (diff * diff);
     }
-    double vRMS_ADC = sqrt(sumSquaresV / NB_ECHANTILLONS);
-    
-    // Facteur d'échelle ZMPT101B vers 230V AC
-    mes.tensionRMS = (vRMS_ADC / 4095.0) * 230.0 * 2.85 * CALIBRATION_TENSION;
-    
-    // Seuil de coupure franche : en dessous de 18V, c'est considéré comme 0V (hors tension)
-    if (mes.tensionRMS < 18.0) {
-      mes.tensionRMS = 0.0;
-    }
+    double vRMS_ADC = sqrt(sqV / NB_ECH);
+    tensionActuelle = (vRMS_ADC / 4095.0) * 230.0 * 2.85 * CALIBRATION_TENSION;
+    if (tensionActuelle < 18.0) tensionActuelle = 0.0;
   }
 
-  // --- TRAITEMENT DU COURANT (ACS712) ---
-  // Si le relais est coupé ou secteur absent, le courant est strictement nul
-  if (!relaisLocalActif || mes.tensionRMS == 0.0 || iPP < 20) {
-    mes.courantRMS = 0.0;
+  // 2. COURANT SECTEUR
+  if (!relaisActif || tensionActuelle == 0.0 || iPP < 20) {
+    courantActuel = 0.0;
   } else {
-    double sumSquaresI = 0;
-    for (int j = 0; j < NB_ECHANTILLONS; j++) {
-      double diffI = (double)bufferI[j] - offsetI;
-      sumSquaresI += (diffI * diffI);
+    double sqI = 0;
+    for (int j = 0; j < NB_ECH; j++) {
+      double diff = (double)bufI[j] - offsetI;
+      sqI += (diff * diff);
     }
-    double iRMS_ADC = sqrt(sumSquaresI / NB_ECHANTILLONS);
-    
-    // Conversion tension capteur vers intensité
+    double iRMS_ADC = sqrt(sqI / NB_ECH);
     double vCapteurRMS = (iRMS_ADC / 4095.0) * 3.3;
-    mes.courantRMS = (vCapteurRMS / ACS712_SENSIBILITE) * CALIBRATION_COURANT;
-    
-    // Filtre de bruit résiduel à vide (< 0.08A)
-    if (mes.courantRMS < 0.08) {
-      mes.courantRMS = 0.0;
+    courantActuel = (vCapteurRMS / ACS712_SENSIBILITE) * CALIBRATION_COURANT;
+    if (courantActuel < 0.08) courantActuel = 0.0;
+  }
+
+  // 3. PUISSANCES & ÉNERGIE
+  if (tensionActuelle == 0.0 || courantActuel == 0.0) {
+    puissanceApparente = 0.0;
+    puissanceActive = 0.0;
+  } else {
+    puissanceApparente = tensionActuelle * courantActuel;
+    puissanceActive = puissanceApparente * facteurPuissance;
+  }
+
+  unsigned long now = millis();
+  float deltaHeures = (now - dernierCalculMs) / 3600000.0;
+  if (puissanceActive > 0) {
+    energieCumulWh += (puissanceActive * deltaHeures);
+  }
+  dernierCalculMs = now;
+
+  // 4. ÉVALUATION DES SEUILS ET SÉCURITÉ AUTOMATIQUE
+  if (tensionActuelle == 0.0) {
+    etatNiveau = "DANGER";
+    messageSysteme = "Coupure secteur (0V) détectée";
+  } else if (tensionActuelle > seuilMaxVoltage) {
+    etatNiveau = "DANGER";
+    messageSysteme = "Surtension secteur critique (>" + String((int)seuilMaxVoltage) + "V)";
+    if (!modeManuel && relaisActif) {
+      appliquerEtatRelais(false);
+    }
+  } else if (tensionActuelle < seuilMinVoltage) {
+    etatNiveau = "ATTENTION";
+    messageSysteme = "Sous-tension secteur (<" + String((int)seuilMinVoltage) + "V)";
+  } else if (courantActuel > seuilMaxCurrent) {
+    etatNiveau = "ATTENTION";
+    messageSysteme = "Surcharge courant (>" + String(seuilMaxCurrent, 1) + "A)";
+    if (!modeManuel && relaisActif) {
+      appliquerEtatRelais(false);
+    }
+  } else {
+    etatNiveau = "NORMAL";
+    messageSysteme = "Système nominal (ESP32 AP Connecté)";
+    // Réarmement automatique en mode auto si les paramètres redeviennent normaux
+    if (!modeManuel && !relaisActif && tensionActuelle >= seuilMinVoltage && tensionActuelle <= seuilMaxVoltage) {
+      appliquerEtatRelais(true);
+    }
+  }
+}
+
+// =========================================================================
+// 6. GESTION DES REQUÊTES HTTP REST API DU SERVEUR WEB EMBARQUÉ
+// =========================================================================
+void ajouterHeadersCORS() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+}
+
+void handleOptions() {
+  ajouterHeadersCORS();
+  server.send(204);
+}
+
+// GET /data ou GET /api/data : Envoie les données en temps réel au format JSON
+void handleGetData() {
+  ajouterHeadersCORS();
+  
+  StaticJsonDocument<512> doc;
+  doc["tension"]            = serialized(String(tensionActuelle, 1));
+  doc["courant"]            = serialized(String(courantActuel, 2));
+  doc["puissance"]          = (int)round(puissanceActive);
+  doc["energie"]            = serialized(String(energieCumulWh, 1));
+  doc["frequence"]          = serialized(String(frequenceActuelle, 2));
+  doc["facteurPuissance"]   = serialized(String(facteurPuissance, 2));
+  doc["puissanceApparente"] = (int)round(puissanceApparente);
+  doc["temperatureBord"]    = 34.8;
+  doc["relais"]             = relaisActif;
+  doc["manuel"]             = modeManuel;
+  doc["niveau"]             = etatNiveau;
+  doc["message"]            = messageSysteme;
+  doc["wifiConnected"]      = true;
+  doc["esp32Connected"]     = true;
+  doc["connectionMode"]     = "ap";
+  doc["apSSID"]             = AP_SSID;
+  doc["ip"]                 = WiFi.softAPIP().toString();
+
+  JsonObject s = doc.createNestedObject("settings");
+  s["minVoltage"] = seuilMinVoltage;
+  s["maxVoltage"] = seuilMaxVoltage;
+  s["minCurrent"] = 0;
+  s["maxCurrent"] = seuilMaxCurrent;
+  s["soundAlerts"] = true;
+
+  String reponse;
+  serializeJson(doc, reponse);
+  server.send(200, "application/json", reponse);
+}
+
+// GET /relais?etat=on|off|auto : Pilotage du Relais
+void handleRelais() {
+  ajouterHeadersCORS();
+  String etat = server.arg("etat");
+  etat.toLowerCase();
+
+  if (etat == "on") {
+    modeManuel = true;
+    appliquerEtatRelais(true);
+    messageSysteme = "Relais forcé ON (Manuel)";
+  } else if (etat == "off") {
+    modeManuel = true;
+    appliquerEtatRelais(false);
+    messageSysteme = "Relais forcé OFF (Manuel)";
+  } else if (etat == "auto") {
+    modeManuel = false;
+    messageSysteme = "Mode Automatique réactivé";
+    if (etatNiveau == "NORMAL") {
+      appliquerEtatRelais(true);
     }
   }
 
-  // --- CALCUL DES PUISSANCES ---
-  if (mes.tensionRMS == 0.0 || mes.courantRMS == 0.0) {
-    mes.puissanceApparente = 0.0;
-    mes.puissanceActive = 0.0;
-  } else {
-    mes.puissanceApparente = mes.tensionRMS * mes.courantRMS;
-    mes.puissanceActive = mes.puissanceApparente * mes.facteurPuissance;
-  }
+  StaticJsonDocument<256> doc;
+  doc["status"] = "ok";
+  doc["relais"] = relaisActif;
+  doc["manuel"] = modeManuel;
+  doc["message"] = messageSysteme;
 
-  return mes;
+  String reponse;
+  serializeJson(doc, reponse);
+  server.send(200, "application/json", reponse);
+}
+
+// GET /toggle : Inverse l'état du Relais
+void handleToggle() {
+  ajouterHeadersCORS();
+  modeManuel = true;
+  appliquerEtatRelais(!relaisActif);
+  
+  StaticJsonDocument<256> doc;
+  doc["status"] = "ok";
+  doc["relais"] = relaisActif;
+  doc["manuel"] = modeManuel;
+  
+  String reponse;
+  serializeJson(doc, reponse);
+  server.send(200, "application/json", reponse);
+}
+
+// GET /calibrer : Remise à zéro de l'accumulateur d'énergie
+void handleCalibrer() {
+  ajouterHeadersCORS();
+  energieCumulWh = 0.0;
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Energie réinitialisée\"}");
+}
+
+// POST ou GET /settings : Mise à jour des seuils
+void handleSettings() {
+  ajouterHeadersCORS();
+  if (server.hasArg("plain")) {
+    StaticJsonDocument<256> doc;
+    DeserializationError err = deserializeJson(doc, server.arg("plain"));
+    if (!err) {
+      if (doc.containsKey("minVoltage")) seuilMinVoltage = doc["minVoltage"];
+      if (doc.containsKey("maxVoltage")) seuilMaxVoltage = doc["maxVoltage"];
+      if (doc.containsKey("maxCurrent")) seuilMaxCurrent = doc["maxCurrent"];
+    }
+  } else {
+    if (server.hasArg("minVoltage")) seuilMinVoltage = server.arg("minVoltage").toFloat();
+    if (server.hasArg("maxVoltage")) seuilMaxVoltage = server.arg("maxVoltage").toFloat();
+    if (server.hasArg("maxCurrent")) seuilMaxCurrent = server.arg("maxCurrent").toFloat();
+  }
+  
+  server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Paramètres enregistrés\"}");
+}
+
+// GET /ping : Test de liaison
+void handlePing() {
+  ajouterHeadersCORS();
+  server.send(200, "application/json", "{\"status\":\"pong\",\"device\":\"ESP32_SMART_MONITOR\",\"time\":" + String(millis()) + "}");
+}
+
+// GET / : Page HTML de test direct
+void handleRoot() {
+  String html = "<!DOCTYPE html><html lang='fr'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'>";
+  html += "<title>Smart Energy Monitor ESP32</title>";
+  html += "<style>body{background:#020617;color:#fff;font-family:sans-serif;text-align:center;padding:20px;}";
+  html += ".card{background:#0f172a;border:1px solid #06b6d4;border-radius:16px;padding:20px;max-width:400px;margin:20px auto;box-shadow:0 0 20px rgba(6,182,212,0.3);}";
+  html += ".btn{display:inline-block;padding:12px 24px;margin:10px 5px;border-radius:12px;font-weight:bold;text-decoration:none;cursor:pointer;}";
+  html += ".btn-on{background:#10b981;color:#fff;}.btn-off{background:#ef4444;color:#fff;}";
+  html += ".val{font-size:28px;color:#22d3ee;font-weight:bold;margin:10px 0;}</style></head><body>";
+  html += "<div class='card'>";
+  html += "<h2>SMART ENERGY MONITOR</h2>";
+  html += "<p>Mode Point d'Acc&egrave;s Wi-Fi Direct Actif</p>";
+  html += "<div class='val'>" + String(tensionActuelle, 1) + " V | " + String(courantActuel, 2) + " A</div>";
+  html += "<div class='val'>" + String((int)puissanceActive) + " W | " + String(energieCumulWh, 1) + " Wh</div>";
+  html += "<p>Etat Relais : <b>" + String(relaisActif ? "ON (Actif)" : "OFF (Coup&eacute;)") + "</b></p>";
+  html += "<a href='/relais?etat=on' class='btn btn-on'>ENCLENCHER RELAIS (ON)</a>";
+  html += "<a href='/relais?etat=off' class='btn btn-off'>COUPER RELAIS (OFF)</a>";
+  html += "<p style='font-size:12px;color:#94a3b8;margin-top:15px;'>Connectez l'application Web &agrave; http://192.168.4.1</p>";
+  html += "</div></body></html>";
+  server.send(200, "text/html", html);
 }
 
 // =========================================================================
@@ -200,12 +357,12 @@ MesuresAC lireMesuresAC() {
 void setup() {
   Serial.begin(115200);
   delay(300);
-  
-  Serial.println("\n==================================================");
-  Serial.println("   SMART ENERGY MONITOR - ESP32 V3.0 EMBEDDED     ");
-  Serial.println("==================================================");
 
-  // Configuration de l'ADC ESP32 pour pleine échelle 0 - 3.3V
+  Serial.println("\n=========================================================");
+  Serial.println("  SMART ENERGY MONITOR - POINT D'ACCES WI-FI V4.0        ");
+  Serial.println("=========================================================");
+
+  // Configuration ADC 12 bits
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
 
@@ -217,131 +374,70 @@ void setup() {
 
   // Activation initiale du Relais (Secteur passant)
   appliquerEtatRelais(true);
-  digitalWrite(PIN_LED_STATUS, LOW);
+  digitalWrite(PIN_LED_STATUS, HIGH);
 
-  // Connexion au réseau Wi-Fi
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.printf("[Wi-Fi] Connexion à '%s'...\n", WIFI_SSID);
+  // 1. Démarrage du Point d'Accès Wi-Fi Direct (SoftAP)
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAPConfig(AP_IP, AP_GATEWAY, AP_SUBNET);
+  bool apSuccess = WiFi.softAP(AP_SSID, AP_PASSWORD);
 
-  int timeout = 0;
-  while (WiFi.status() != WL_CONNECTED && timeout < 25) {
-    delay(400);
-    Serial.print(".");
-    digitalWrite(PIN_LED_STATUS, !digitalRead(PIN_LED_STATUS));
-    timeout++;
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\n[Wi-Fi] Connecté !");
-    Serial.print("[Wi-Fi] Adresse IP ESP32 : ");
-    Serial.println(WiFi.localIP());
-    digitalWrite(PIN_LED_STATUS, HIGH);
+  if (apSuccess) {
+    Serial.printf("[Wi-Fi AP] Point d'accès démarré avec succès !\n");
+    Serial.printf("[Wi-Fi AP] SSID     : %s\n", AP_SSID);
+    Serial.printf("[Wi-Fi AP] Mot de passe : %s\n", AP_PASSWORD);
+    Serial.print(  "[Wi-Fi AP] Adresse IP   : ");
+    Serial.println(WiFi.softAPIP());
   } else {
-    Serial.println("\n[Wi-Fi] Non connecté (Mode sécurité autonome actif)");
+    Serial.println("[Wi-Fi AP] Échec du démarrage du point d'accès !");
   }
 
-  dernierCalculEnergieMs = millis();
+  // 2. (Optionnel) Connexion Wi-Fi Station
+  if (strlen(STA_SSID) > 0 && strcmp(STA_SSID, "VOTRE_WIFI_BOX") != 0) {
+    Serial.printf("[Wi-Fi STA] Tentative de connexion à %s...\n", STA_SSID);
+    WiFi.begin(STA_SSID, STA_PASSWORD);
+  }
+
+  // 3. Déclaration des routes du Serveur Web REST API
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/data", HTTP_GET, handleGetData);
+  server.on("/api/data", HTTP_GET, handleGetData);
+  server.on("/relais", HTTP_GET, handleRelais);
+  server.on("/relais", HTTP_POST, handleRelais);
+  server.on("/toggle", HTTP_GET, handleToggle);
+  server.on("/calibrer", HTTP_GET, handleCalibrer);
+  server.on("/settings", HTTP_POST, handleSettings);
+  server.on("/settings", HTTP_GET, handleSettings);
+  server.on("/ping", HTTP_GET, handlePing);
+
+  // Handlers OPTIONS pour pré-vols CORS des navigateurs
+  server.on("/data", HTTP_OPTIONS, handleOptions);
+  server.on("/api/data", HTTP_OPTIONS, handleOptions);
+  server.on("/relais", HTTP_OPTIONS, handleOptions);
+  server.on("/settings", HTTP_OPTIONS, handleOptions);
+  server.on("/ping", HTTP_OPTIONS, handleOptions);
+
+  server.begin();
+  Serial.println("[HTTP] Serveur Web REST API démarré sur le port 80 !");
+  dernierCalculMs = millis();
 }
 
 // =========================================================================
 // 8. BOUCLE PRINCIPALE (LOOP)
 // =========================================================================
 void loop() {
-  unsigned long maintenant = millis();
+  // Traitement immédiat des requêtes HTTP reçues des smartphones ou navigateurs
+  server.handleClient();
 
-  // Reconnexion automatique en arrière-plan
-  if (WiFi.status() != WL_CONNECTED && (maintenant % 10000 < 50)) {
-    WiFi.reconnect();
+  unsigned long now = millis();
+
+  // Échantillonnage toutes les 500ms
+  if (now - dernierEchantillonnageMs >= 500) {
+    dernierEchantillonnageMs = now;
+    effectuerMesuresAC();
+
+    // Clignotement discret de la LED témoin
+    digitalWrite(PIN_LED_STATUS, !digitalRead(PIN_LED_STATUS));
   }
 
-  // Échantillonnage et envoi toutes les secondes
-  if (maintenant - dernierEnvoiMs >= INTERVALLE_ENVOI_MS) {
-    MesuresAC data = lireMesuresAC();
-
-    // Cumul de l'énergie (Wh)
-    float deltaHeures = (maintenant - dernierCalculEnergieMs) / 3600000.0;
-    if (data.puissanceActive > 0) {
-      cumulEnergieWh += (data.puissanceActive * deltaHeures);
-    }
-    dernierCalculEnergieMs = maintenant;
-    dernierEnvoiMs = maintenant;
-
-    // Affichage moniteur série
-    Serial.printf("[MESURES] Tension: %.1fV | Courant: %.2fA | Puissance: %.0fW | Relais: %s\n",
-                  data.tensionRMS, data.courantRMS, data.puissanceActive,
-                  relaisLocalActif ? "ON" : "OFF");
-
-    // Sécurité locale autonome (Fail-Safe)
-    bool anomalieCritique = false;
-    if (data.tensionRMS > seuilMaxVoltage || (data.tensionRMS < seuilMinVoltage && data.tensionRMS > 25.0) || data.courantRMS > seuilMaxCurrent) {
-      anomalieCritique = true;
-      Serial.println("[SECURITE] Dépassement de seuil détecté localement !");
-    }
-
-    // Communication HTTP avec le serveur
-    if (WiFi.status() == WL_CONNECTED) {
-      HTTPClient http;
-      http.begin(SERVER_URL);
-      http.addHeader("Content-Type", "application/json");
-      http.setTimeout(2500);
-
-      // Trame JSON
-      StaticJsonDocument<384> doc;
-      doc["tension"]          = serialized(String(data.tensionRMS, 1));
-      doc["courant"]          = serialized(String(data.courantRMS, 2));
-      doc["puissance"]        = (int)round(data.puissanceActive);
-      doc["energie"]          = serialized(String(cumulEnergieWh, 1));
-      doc["frequence"]        = serialized(String(data.frequence, 2));
-      doc["facteurPuissance"] = serialized(String(data.facteurPuissance, 2));
-      doc["relais"]           = relaisLocalActif;
-
-      String payload;
-      serializeJson(doc, payload);
-
-      int httpCode = http.POST(payload);
-
-      if (httpCode > 0) {
-        String reponse = http.getString();
-        StaticJsonDocument<512> resDoc;
-        DeserializationError err = deserializeJson(resDoc, reponse);
-
-        if (!err) {
-          // 1. Mise à jour de l'état du Relais demandé par l'application
-          if (resDoc.containsKey("relais")) {
-            bool relaisVoulu = resDoc["relais"].as<bool>();
-            
-            // Si anomalie critique locale et non forcée manuellement, priorité à la coupure
-            if (anomalieCritique && !resDoc["manuel"]) {
-              relaisVoulu = false;
-            }
-
-            if (relaisVoulu != relaisLocalActif) {
-              appliquerEtatRelais(relaisVoulu);
-            }
-          }
-
-          // 2. Synchronisation des seuils de sécurité
-          if (resDoc.containsKey("settings")) {
-            seuilMinVoltage = resDoc["settings"]["minVoltage"] | seuilMinVoltage;
-            seuilMaxVoltage = resDoc["settings"]["maxVoltage"] | seuilMaxVoltage;
-            seuilMaxCurrent = resDoc["settings"]["maxCurrent"] | seuilMaxCurrent;
-          }
-        }
-      } else {
-        Serial.printf("[HTTP] Erreur communication: %d\n", httpCode);
-        if (anomalieCritique) {
-          appliquerEtatRelais(false);
-        }
-      }
-      http.end();
-    } else {
-      // Mode Hors-Ligne
-      if (anomalieCritique) {
-        appliquerEtatRelais(false);
-      }
-    }
-  }
-
-  delay(20);
+  delay(2);
 }

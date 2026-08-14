@@ -17,12 +17,16 @@ export interface ESP32Data {
   temperatureBord?: number;  // e.g. 36.2 °C
   wifiConnected?: boolean;   // true = WiFi connected, false = Disconnected
   esp32Connected?: boolean;  // true if real ESP32 is sending HTTP requests
+  connectionMode?: 'ap' | 'server' | 'custom';
+  esp32Ip?: string;
   settings?: {
     minVoltage: number;
     maxVoltage: number;
     minCurrent: number;
     maxCurrent: number;
     soundAlerts: boolean;
+    esp32Ip?: string;
+    connectionMode?: 'ap' | 'server' | 'custom';
   };
 }
 

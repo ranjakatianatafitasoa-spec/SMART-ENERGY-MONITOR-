@@ -1,0 +1,23 @@
+{
+  "short_name": "EnergyMonitor",
+  "name": "Smart Énergie Monitor",
+  "description": "Surveillance en temps réel de la consommation électrique, analyse de tension et pilotage intelligent du relais.",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    },
+    {
+      "src": "/icon.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#050814",
+  "theme_color": "#06b6d4",
+  "display": "standalone",
+  "orientation": "portrait-primary"
+}

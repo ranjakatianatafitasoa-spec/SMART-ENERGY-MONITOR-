@@ -146,6 +146,67 @@ export default function App() {
     }, 2800);
   }, []);
 
+  // -------------------------------------------------------------
+  // SMART PHONE BACK BUTTON & POPSTATE SYNCHRONIZATION
+  // -------------------------------------------------------------
+  const lastBackPressRef = useRef<number>(0);
+
+  // Tab navigation with history pushState
+  const handleSelectTab = useCallback((newTab: ActiveTab) => {
+    setActiveTab(newTab);
+    window.history.pushState({ tab: newTab, modal: null }, '');
+  }, []);
+
+  // Modal Open/Close with history pushState
+  const handleOpenEnergyModal = useCallback(() => {
+    setIsEnergyModalOpen(true);
+    window.history.pushState({ tab: activeTab, modal: 'energy' }, '');
+  }, [activeTab]);
+
+  const handleCloseEnergyModal = useCallback(() => {
+    setIsEnergyModalOpen(false);
+  }, []);
+
+  // Popstate Listener: Intercepts mobile back button
+  useEffect(() => {
+    // Seed initial history entries
+    window.history.replaceState({ tab: 'dashboard', modal: null }, '');
+    window.history.pushState({ tab: 'dashboard', modal: null }, '');
+
+    const onPopState = () => {
+      // 1. If Modal is currently open -> Close Modal first
+      if (isEnergyModalOpen) {
+        setIsEnergyModalOpen(false);
+        window.history.pushState({ tab: activeTab, modal: null }, '');
+        return;
+      }
+
+      // 2. If on a Sub-tab (Relais, Graphique, Rapports, Paramètres, À Propos) -> Return to Dashboard
+      if (activeTab !== 'dashboard') {
+        setActiveTab('dashboard');
+        window.history.pushState({ tab: 'dashboard', modal: null }, '');
+        return;
+      }
+
+      // 3. If on Main Dashboard -> Double-tap back to exit protection
+      const now = Date.now();
+      if (now - lastBackPressRef.current < 2000) {
+        // Confirmed second tap -> Allow exit
+        window.history.back();
+      } else {
+        lastBackPressRef.current = now;
+        showToast("Appuyez à nouveau pour quitter l'application", "info");
+        // Re-push history state to prevent unexpected instant exit
+        window.history.pushState({ tab: 'dashboard', modal: null }, '');
+      }
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+    };
+  }, [activeTab, isEnergyModalOpen, showToast]);
+
   // Record history ONLY for notable incidents, alerts, or state transitions
   const recordIfPertinent = useCallback((newData: ESP32Data) => {
     const changementNiveau = dernierNiveauRef.current !== null && newData.niveau !== dernierNiveauRef.current;
@@ -340,7 +401,7 @@ export default function App() {
 
   const handleNavigateToReports = (filter: 'all' | 'incidents' = 'all') => {
     setIncidentFilter(filter);
-    setActiveTab('reports');
+    handleSelectTab('reports');
   };
 
   // PDF Export Handlers
@@ -377,7 +438,7 @@ export default function App() {
   return (
     <div className="max-w-[1300px] mx-auto p-2 sm:p-3.5 pb-20 sm:pb-4 min-h-screen flex flex-col justify-start">
       {/* Header displayed on all pages */}
-      <Header data={data} activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Header data={data} activeTab={activeTab} setActiveTab={handleSelectTab} />
 
       {/* Notification Banner positioned directly below the Header */}
       {toastMessage && (
@@ -410,7 +471,7 @@ export default function App() {
           {/* 3. Cases Tension, Courant, Puissance, Énergie */}
           <MetricsGrid
             data={data}
-            onOpenEnergyModal={() => setIsEnergyModalOpen(true)}
+            onOpenEnergyModal={handleOpenEnergyModal}
           />
         </div>
       )}
@@ -552,7 +613,7 @@ export default function App() {
       {/* Energy Modal */}
       <EnergyModal
         isOpen={isEnergyModalOpen}
-        onClose={() => setIsEnergyModalOpen(false)}
+        onClose={handleCloseEnergyModal}
         energieWh={data.energie}
         historyE={historyE}
         onDownloadPdf={handleDownloadEnergyPdf}
@@ -573,7 +634,7 @@ export default function App() {
       />
 
       {/* Sticky Bottom Navigation Bar (Matches mobile mockup) */}
-      <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
+      <BottomNav activeTab={activeTab} setActiveTab={handleSelectTab} />
 
       {/* Printable Report Container */}
       <div id="rapport" dangerouslySetInnerHTML={{ __html: reportHtml }} />

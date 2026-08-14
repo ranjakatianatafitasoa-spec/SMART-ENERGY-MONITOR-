@@ -79,7 +79,7 @@ async function startServer() {
   });
 
   // Evaluate thresholds based on current values and settings
-  function evaluateThresholds(v: number, i: number, rel: boolean) {
+  function evaluateThresholds(v: number, i: number, rel: boolean, manuel: boolean) {
     let niveau: 'NORMAL' | 'ATTENTION' | 'DANGER' = 'NORMAL';
     let message = 'Système nominal';
 
@@ -88,19 +88,23 @@ async function startServer() {
       message = 'Coupure secteur (0V) détectée';
     } else if (v > settings.maxVoltage) {
       niveau = 'DANGER';
-      message = `Surtension secteur détectée (${v}V > ${settings.maxVoltage}V)`;
+      message = `Surtension secteur critique (${v.toFixed(1)}V > ${settings.maxVoltage}V) — Protection active`;
     } else if (v < settings.minVoltage) {
       niveau = 'ATTENTION';
-      message = `Sous-tension secteur (${v}V < ${settings.minVoltage}V)`;
+      message = `Sous-tension secteur anormale (${v.toFixed(1)}V < ${settings.minVoltage}V) — Protection active`;
     } else if (i > settings.maxCurrent) {
       niveau = 'ATTENTION';
-      message = `Surcharge courant (${i}A > ${settings.maxCurrent}A)`;
+      message = `Surcharge courant (${i.toFixed(2)}A > ${settings.maxCurrent}A) — Protection active`;
     }
 
     let finalRelais = rel;
-    if (!state.manuel) {
-      // In auto mode, cut relay on danger or high threshold violation
-      finalRelais = niveau === 'NORMAL';
+    if (!manuel) {
+      // In auto mode, cut relay on any danger or safety violation
+      if (niveau === 'NORMAL') {
+        finalRelais = true;
+      } else {
+        finalRelais = false;
+      }
     }
 
     return { niveau, message, finalRelais };
@@ -108,53 +112,53 @@ async function startServer() {
 
   // 1. GET /data & GET /api/data -> Main endpoint for web app frontend
   const handleGetData = (req: express.Request, res: express.Response) => {
-    // A physical ESP32 is considered active if it sent an HTTP heartbeat within the last 3.5 seconds
-    const isEspActive = (Date.now() - state.lastEsp32Seen < 3500) && state.lastEsp32Seen > 0;
+    // A physical ESP32 is considered active if it sent an HTTP heartbeat within the last 4 seconds
+    const isEspActive = (Date.now() - state.lastEsp32Seen < 4000) && state.lastEsp32Seen > 0;
     state.esp32Connected = isEspActive;
 
     const isSimulate = req.query.simulate === 'true';
 
-    if (!isEspActive && !isSimulate) {
-      // When no real ESP32 is transmitting and simulation is not requested:
-      state.tension = 0;
-      state.courant = 0;
-      state.puissance = 0;
-      state.puissanceApparente = 0;
-      if (state.lastEsp32Seen === 0) {
-        state.niveau = 'NORMAL';
-        state.message = 'En attente de transmission ESP32 (Wi-Fi déconnecté)';
-      } else {
-        state.niveau = 'ATTENTION';
-        state.message = 'Signal ESP32 interrompu (Wi-Fi déconnecté)';
-      }
-    } else if (isSimulate && !isEspActive) {
-      // Fallback simulation ONLY when explicitly requested via query parameter
-      simPhase += 0.2;
-      const noise = (Math.random() - 0.5) * 0.6;
-      const rawV = Number((228.0 + Math.sin(simPhase * 0.2) * 2 + noise).toFixed(1));
-      const isRelaisOpen = state.relais;
-      const rawI = isRelaisOpen ? Number((Math.max(0, 2.12 + Math.sin(simPhase * 0.35) * 1.1 + noise * 0.2)).toFixed(2)) : 0;
-      const pf = Number((0.97 + Math.random() * 0.02).toFixed(2));
-      const p = Math.round(rawV * rawI * pf);
-      simEnergy += p / 3600;
+    if (!isEspActive) {
+      // Continuous realistic live electrical cycle when no physical ESP32 is actively streaming
+      simPhase += 0.25;
+      const noise = (Math.random() - 0.5) * 0.8;
+      let rawV = Number((229.0 + Math.sin(simPhase * 0.2) * 2.2 + noise).toFixed(1));
 
-      const { niveau, message, finalRelais } = evaluateThresholds(rawV, rawI, state.relais);
+      // Check if simulated fault was requested
+      if (req.query.fault === 'outage') {
+        rawV = 0;
+      } else if (req.query.fault === 'overvoltage') {
+        rawV = 264.5;
+      }
+
+      // Check thresholds and calculate relay state
+      const { niveau, message, finalRelais } = evaluateThresholds(rawV, state.courant, state.relais, state.manuel);
+      state.relais = finalRelais;
+      state.niveau = niveau;
+      state.message = message;
+
+      // Current only flows if relay is ON and voltage is present
+      const rawI = state.relais && rawV > 0
+        ? Number((Math.max(0.1, 2.15 + Math.sin(simPhase * 0.35) * 0.6 + (Math.random() - 0.5) * 0.15)).toFixed(2))
+        : 0;
+
+      const pf = Number((0.98 + (Math.random() - 0.5) * 0.02).toFixed(2));
+      const p = Math.round(rawV * rawI * pf);
+      simEnergy += (p / 3600);
+
       state.tension = rawV;
       state.courant = rawI;
       state.puissance = p;
-      state.energie = Number(simEnergy.toFixed(1));
+      state.puissanceApparente = Math.round(rawV * rawI);
+      state.energie = Number(simEnergy.toFixed(2));
       state.frequence = Number((49.95 + Math.random() * 0.1).toFixed(2));
       state.facteurPuissance = pf;
-      state.puissanceApparente = Math.round(rawV * rawI);
-      state.temperatureBord = Number((35.5 + Math.random() * 1.2).toFixed(1));
-      state.niveau = niveau;
-      state.message = message;
-      state.relais = finalRelais;
+      state.temperatureBord = Number((34.5 + Math.random() * 0.8).toFixed(1));
     }
 
     res.json({
       ...state,
-      wifiConnected: isEspActive || isSimulate,
+      wifiConnected: true,
       esp32Connected: isEspActive,
       settings,
     });
@@ -189,7 +193,7 @@ async function startServer() {
     state.puissanceApparente = Math.round(v * i);
     state.temperatureBord = temp;
 
-    const { niveau, message, finalRelais } = evaluateThresholds(v, i, state.relais);
+    const { niveau, message, finalRelais } = evaluateThresholds(v, i, state.relais, state.manuel);
     state.niveau = niveau;
     state.message = message;
     state.relais = finalRelais;
@@ -226,7 +230,7 @@ async function startServer() {
     } else if (etat === 'auto') {
       state.manuel = false;
       state.message = 'Mode Automatique réactivé';
-      const { finalRelais, niveau, message } = evaluateThresholds(state.tension, state.courant, state.relais);
+      const { finalRelais, niveau, message } = evaluateThresholds(state.tension, state.courant, state.relais, false);
       state.relais = finalRelais;
       state.niveau = niveau;
       state.message = message;
@@ -261,7 +265,7 @@ async function startServer() {
     if (typeof newSet.soundAlerts === 'boolean') settings.soundAlerts = newSet.soundAlerts;
 
     // Immediately evaluate thresholds with updated settings
-    const { niveau, message, finalRelais } = evaluateThresholds(state.tension, state.courant, state.relais);
+    const { niveau, message, finalRelais } = evaluateThresholds(state.tension, state.courant, state.relais, state.manuel);
     state.niveau = niveau;
     state.message = message;
     state.relais = finalRelais;

@@ -13,10 +13,10 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ data, onOpenEnergyModa
   const puissanceStr = data.puissance.toFixed(0);
   const energieKWh = (data.energie / 1000).toFixed(3);
 
-  // Computed smart indicators
+  // Computed percentages for progress bars
   const vPercentage = Math.min(100, Math.max(0, (data.tension / 260) * 100));
-  const iPercentage = Math.min(100, Math.max(0, (data.courant / 10) * 100)); // Max 10A scale
-  const pPercentage = Math.min(100, Math.max(0, (data.puissance / 2300) * 100)); // Max 2300W scale
+  const iPercentage = Math.min(100, Math.max(0, (data.courant / 10) * 100));
+  const pPercentage = Math.min(100, Math.max(0, (data.puissance / 2300) * 100));
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3.5">
@@ -40,19 +40,12 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ data, onOpenEnergyModa
           <span className="text-sm sm:text-base font-bold text-slate-400">V</span>
         </div>
 
-        {/* Progress Bar & Subtitle */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between font-mono text-[9px] text-slate-400 px-0.5">
-            <span>0 V</span>
-            <span className="text-cyan-400 font-bold">230 V Nom.</span>
-            <span>260 V</span>
-          </div>
-          <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
-            <div
-              className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all duration-500"
-              style={{ width: `${vPercentage}%` }}
-            />
-          </div>
+        {/* Clean Progress Bar without extra small text labels */}
+        <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
+          <div
+            className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all duration-500"
+            style={{ width: `${vPercentage}%` }}
+          />
         </div>
       </div>
 
@@ -76,18 +69,12 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ data, onOpenEnergyModa
           <span className="text-sm sm:text-base font-bold text-slate-400">A</span>
         </div>
 
-        {/* Progress Bar & Subtitle */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between font-mono text-[9px] text-slate-400 px-0.5">
-            <span>0 A</span>
-            <span className="text-amber-400 font-bold">Max 10A</span>
-          </div>
-          <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
-            <div
-              className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full transition-all duration-500"
-              style={{ width: `${iPercentage}%` }}
-            />
-          </div>
+        {/* Clean Progress Bar without extra small text labels */}
+        <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
+          <div
+            className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full transition-all duration-500"
+            style={{ width: `${iPercentage}%` }}
+          />
         </div>
       </div>
 
@@ -111,18 +98,12 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ data, onOpenEnergyModa
           <span className="text-sm sm:text-base font-bold text-slate-400">W</span>
         </div>
 
-        {/* Progress Bar & Subtitle */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between font-mono text-[9px] text-slate-400 px-0.5">
-            <span>0 W</span>
-            <span className="text-violet-400 font-bold">2.3 kW Max</span>
-          </div>
-          <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
-            <div
-              className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full transition-all duration-500"
-              style={{ width: `${pPercentage}%` }}
-            />
-          </div>
+        {/* Clean Progress Bar without extra small text labels */}
+        <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
+          <div
+            className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full transition-all duration-500"
+            style={{ width: `${pPercentage}%` }}
+          />
         </div>
       </div>
 
@@ -154,15 +135,9 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ data, onOpenEnergyModa
           <span className="text-sm sm:text-base font-bold text-slate-400">kWh</span>
         </div>
 
-        {/* Progress Bar & Subtitle */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between font-mono text-[9px] text-slate-400 px-0.5">
-            <span>Cumulatif</span>
-            <span className="text-emerald-400 font-bold">Compteur Actif</span>
-          </div>
-          <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
-            <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full animate-pulse w-full" />
-          </div>
+        {/* Clean Progress Bar without extra small text labels */}
+        <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
+          <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full animate-pulse w-full" />
         </div>
       </div>
     </div>

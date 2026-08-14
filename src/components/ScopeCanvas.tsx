@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Activity, Zap } from 'lucide-react';
+import { Activity } from 'lucide-react';
 
 interface ScopeCanvasProps {
   voltage: number;
@@ -37,7 +37,7 @@ export const ScopeCanvas: React.FC<ScopeCanvasProps> = ({ voltage, current }) =>
 
       ctx.clearRect(0, 0, w, h);
 
-      // Dark oscilloscope canvas gradient
+      // Dark oscilloscope canvas background
       const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
       bgGrad.addColorStop(0, '#040814');
       bgGrad.addColorStop(0.5, '#070f24');
@@ -47,7 +47,6 @@ export const ScopeCanvas: React.FC<ScopeCanvasProps> = ({ voltage, current }) =>
 
       // Oscilloscope Grid Mesh
       if (w > 0 && h > 0) {
-        // Subtle grid lines
         ctx.strokeStyle = 'rgba(0, 242, 254, 0.08)';
         ctx.lineWidth = 1;
 
@@ -86,21 +85,6 @@ export const ScopeCanvas: React.FC<ScopeCanvasProps> = ({ voltage, current }) =>
         ctx.lineTo(w / 2, h);
         ctx.stroke();
         ctx.setLineDash([]);
-
-        // Small tick marks on center axes
-        ctx.strokeStyle = 'rgba(34, 211, 238, 0.4)';
-        for (let x = 0; x <= w; x += xStep / 5) {
-          ctx.beginPath();
-          ctx.moveTo(x, midY - 3);
-          ctx.lineTo(x, midY + 3);
-          ctx.stroke();
-        }
-        for (let y = 0; y <= h; y += yStep / 5) {
-          ctx.beginPath();
-          ctx.moveTo(w / 2 - 3, y);
-          ctx.lineTo(w / 2 + 3, y);
-          ctx.stroke();
-        }
       }
 
       if (w > 0 && h > 0) {
@@ -137,7 +121,7 @@ export const ScopeCanvas: React.FC<ScopeCanvasProps> = ({ voltage, current }) =>
           else ctx.lineTo(x, y);
         }
         ctx.stroke();
-        ctx.shadowBlur = 0; // Reset shadow
+        ctx.shadowBlur = 0;
       }
 
       phase += 0.07;
@@ -163,45 +147,29 @@ export const ScopeCanvas: React.FC<ScopeCanvasProps> = ({ voltage, current }) =>
           <span className="font-bold text-slate-200 tracking-wider uppercase text-[11px]">
             OSCILLATION DU SIGNAL AC
           </span>
-          <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-bold hidden xs:inline">
-            50.0 Hz
-          </span>
         </div>
 
         {/* Channel Indicators */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           {/* CH1: Voltage */}
-          <div className="flex items-center gap-1 text-[10px]">
+          <div className="flex items-center gap-1 text-[10.5px]">
             <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
             <span className="text-cyan-300 font-bold">CH1: {voltage.toFixed(1)}V</span>
           </div>
           {/* CH2: Current */}
-          <div className="flex items-center gap-1 text-[10px]">
+          <div className="flex items-center gap-1 text-[10.5px]">
             <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_6px_#f59e0b]" />
             <span className="text-amber-300 font-bold">CH2: {current.toFixed(2)}A</span>
           </div>
         </div>
       </div>
 
-      {/* Canvas Scope Display with responsive vh height */}
+      {/* Canvas Scope Display with responsive height */}
       <div className="relative rounded-xl overflow-hidden border border-cyan-500/30 shadow-inner h-[18vh] sm:h-[22vh] min-h-[130px] max-h-[220px] w-full">
         <canvas
           ref={canvasRef}
           className="w-full h-full block cursor-crosshair"
         />
-
-        {/* Ambient Overlay Grid Details */}
-        <div className="absolute bottom-1.5 left-2 flex items-center gap-2 font-mono text-[8.5px] text-slate-400 bg-slate-950/80 px-2 py-0.5 rounded border border-slate-800/80 pointer-events-none backdrop-blur-sm">
-          <span>ÉCHELLE: 50V/div</span>
-          <span className="text-slate-600">•</span>
-          <span>1A/div</span>
-          <span className="text-slate-600">•</span>
-          <span>5ms/div</span>
-        </div>
-
-        <div className="absolute top-1.5 right-2 font-mono text-[8.5px] text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/30 pointer-events-none backdrop-blur-sm">
-          {voltage > 0 ? 'AC SYNCHRONISÉ' : '0V FLATLINE'}
-        </div>
       </div>
     </div>
   );

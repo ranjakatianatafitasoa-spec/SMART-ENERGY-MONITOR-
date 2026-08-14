@@ -19,7 +19,11 @@ interface HeaderProps {
   setActiveTab: (tab: ActiveTab) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ data, activeTab, setActiveTab }) => {
+export const Header: React.FC<HeaderProps> = ({
+  data,
+  activeTab,
+  setActiveTab,
+}) => {
   const [timeStr, setTimeStr] = useState<string>('--:--:--');
   const [dateStr, setDateStr] = useState<string>('');
 
@@ -123,7 +127,6 @@ export const Header: React.FC<HeaderProps> = ({ data, activeTab, setActiveTab })
             </span>
             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${data.wifiConnected === true ? 'bg-emerald-400 shadow-[0_0_5px_#10b981]' : 'bg-rose-500 shadow-[0_0_5px_#f43f5e] animate-ping'}`} />
           </button>
-
         </div>
       </div>
 

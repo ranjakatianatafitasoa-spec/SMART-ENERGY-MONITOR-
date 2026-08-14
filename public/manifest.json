@@ -1,23 +1,56 @@
 {
   "short_name": "EnergyMonitor",
   "name": "Smart Énergie Monitor",
-  "description": "Surveillance en temps réel de la consommation électrique, analyse de tension et pilotage intelligent du relais.",
+  "description": "Surveillance en temps réel de la consommation électrique, analyse de tension et pilotage intelligent du relais ESP32.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "window-controls-overlay"],
+  "orientation": "portrait-primary",
+  "background_color": "#050814",
+  "theme_color": "#06b6d4",
+  "categories": ["utilities", "productivity", "energy"],
   "icons": [
     {
       "src": "/favicon.svg",
       "type": "image/svg+xml",
-      "sizes": "any"
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
     },
     {
       "src": "/icon.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "type": "image/png",
+      "sizes": "180x180",
+      "purpose": "any"
     }
   ],
-  "start_url": "/",
-  "background_color": "#050814",
-  "theme_color": "#06b6d4",
-  "display": "standalone",
-  "orientation": "portrait-primary"
+  "shortcuts": [
+    {
+      "name": "Tableau de Bord",
+      "short_name": "Dashboard",
+      "description": "Accéder aux métriques en temps réel",
+      "url": "/?tab=dashboard",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Commande Relais",
+      "short_name": "Relais",
+      "description": "Contrôler le relais secteur",
+      "url": "/?tab=relay",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    }
+  ]
 }

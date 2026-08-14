@@ -561,7 +561,11 @@ export default function App() {
   return (
     <div className="max-w-[1300px] mx-auto p-2 sm:p-3.5 pb-20 sm:pb-4 min-h-screen flex flex-col justify-start">
       {/* Header displayed on all pages */}
-      <Header data={data} activeTab={activeTab} setActiveTab={handleSelectTab} />
+      <Header
+        data={data}
+        activeTab={activeTab}
+        setActiveTab={handleSelectTab}
+      />
 
       {/* Notification Banner positioned directly below the Header */}
       {toastMessage && (

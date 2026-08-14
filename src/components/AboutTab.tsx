@@ -10,48 +10,57 @@ export const AboutTab: React.FC<AboutTabProps> = ({ data }) => {
   const [copied, setCopied] = useState(false);
 
   const espCodeSnippet = `/*
- * SMART ENERGY MONITOR - ESP32 EMBEDDED C++ CODE
- * Mesure AC RMS (ZMPT101B + ACS712), commande Relais et synchronisation Wi-Fi
+ * SMART ENERGY MONITOR - ESP32 EMBEDDED C++ (V3.0 ROBUSTE)
+ * Mesure AC RMS réelle (ZMPT101B + ACS712), commande Relais Active-LOW / Active-HIGH
+ * Détection automatique secteur débranché (0V) & synchronisation Wi-Fi
  */
 
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
-// 1. Paramètres Wi-Fi & Serveur
+// 1. Configuration Wi-Fi & Serveur
 const char* WIFI_SSID     = "VOTRE_WIFI_SSID";
 const char* WIFI_PASSWORD = "VOTRE_WIFI_PASSWORD";
 const char* SERVER_URL    = "http://192.168.1.50:3000/api/esp32/data";
 
-// 2. Affectation des Broches
-const int PIN_RELAIS   = 26; // Commande Relais (Coupure / Rétablissement)
-const int PIN_ZMPT101B = 34; // Capteur Tension AC (ZMPT101B)
-const int PIN_ACS712   = 35; // Capteur Courant AC (ACS712)
-const int PIN_LED      = 2;  // LED d'état Wi-Fi
+// 2. Pins & Configuration Relais (Active-LOW standard)
+const int PIN_RELAIS   = 26; // GPIO26 -> IN du Relais
+const int PIN_ZMPT101B = 34; // GPIO34 -> OUT du ZMPT101B (ADC1_6)
+const int PIN_ACS712   = 35; // GPIO35 -> OUT de l'ACS712 (ADC1_7)
+const int PIN_LED      = 2;  // LED Wi-Fi
 
-// 3. Variables de Calibration & Seuils dynamiques
-const float ACS712_SENS = 0.100; // 100mV/A pour ACS712 20A
+const int RELAIS_NIVEAU_ACTIF = LOW;  // Mettre LOW pour module standard optocouplé
+const int RELAIS_NIVEAU_COUPE = HIGH; // Mettre HIGH pour couper le relais
+
+const float ACS712_SENS = 0.100; // 100mV/A (ACS712 20A)
 float seuilMinVoltage = 185.0;
 float seuilMaxVoltage = 253.0;
 float seuilMaxCurrent = 10.0;
+bool relaisLocalActif = true;
 float cumulEnergieWh  = 0.0;
 unsigned long dernierEnvoi = 0;
 unsigned long dernierCalcul = 0;
 
+void appliquerRelais(bool activer) {
+  relaisLocalActif = activer;
+  digitalWrite(PIN_RELAIS, activer ? RELAIS_NIVEAU_ACTIF : RELAIS_NIVEAU_COUPE);
+}
+
 void setup() {
   Serial.begin(115200);
+  analogReadResolution(12);
+  analogSetAttenuation(ADC_11db); // Pleine échelle 0-3.3V
+
   pinMode(PIN_RELAIS, OUTPUT);
   pinMode(PIN_LED, OUTPUT);
-  digitalWrite(PIN_RELAIS, HIGH); // Relais actif (secteur passant)
+  appliquerRelais(true); // Actif au démarrage
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("Connexion au Wi-Fi");
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+    delay(400);
   }
-  Serial.println("\\n[Wi-Fi] Connecté ! IP: " + WiFi.localIP().toString());
   digitalWrite(PIN_LED, HIGH);
   dernierCalcul = millis();
 }
@@ -60,19 +69,46 @@ void loop() {
   unsigned long maintenant = millis();
 
   if (maintenant - dernierEnvoi >= 1000) {
-    // Mesure RMS par échantillonnage
-    long sV = 0, sI = 0;
-    for (int j = 0; j < 400; j++) {
-      int v = analogRead(PIN_ZMPT101B) - 2048;
-      int i = analogRead(PIN_ACS712) - 2048;
-      sV += (long)v * v;
-      sI += (long)i * i;
-      delayMicroseconds(50);
+    // Échantillonnage avec calcul dynamique de l'offset continu (élimination fausses valeurs)
+    const int N = 400;
+    int minV = 4095, maxV = 0, minI = 4095, maxI = 0;
+    long sumV = 0, sumI = 0;
+    int bufV[N], bufI[N];
+
+    for (int j = 0; j < N; j++) {
+      int v = analogRead(PIN_ZMPT101B);
+      int i = analogRead(PIN_ACS712);
+      bufV[j] = v; bufI[j] = i;
+      sumV += v; sumI += i;
+      if (v < minV) minV = v; if (v > maxV) maxV = v;
+      if (i < minI) minI = i; if (i > maxI) maxI = i;
+      delayMicroseconds(95);
     }
-    float vRMS = (sqrt(sV / 400.0) / 4095.0) * 230.0 * 2.8;
-    float iRMS = ((sqrt(sI / 400.0) / 4095.0) * 3.3) / ACS712_SENS;
-    if (vRMS < 15.0) vRMS = 0.0;
-    if (iRMS < 0.08) iRMS = 0.0;
+
+    float offsetV = (float)sumV / N;
+    float offsetI = (float)sumI / N;
+    float vRMS = 0.0, iRMS = 0.0;
+
+    // Détection secteur branché via l'amplitude Crête-à-Crête
+    if ((maxV - minV) > 25) {
+      double sqV = 0;
+      for (int j = 0; j < N; j++) {
+        double d = (double)bufV[j] - offsetV;
+        sqV += d * d;
+      }
+      vRMS = (sqrt(sqV / N) / 4095.0) * 230.0 * 2.85;
+      if (vRMS < 18.0) vRMS = 0.0;
+    }
+
+    if (relaisLocalActif && vRMS > 0.0 && (maxI - minI) > 20) {
+      double sqI = 0;
+      for (int j = 0; j < N; j++) {
+        double d = (double)bufI[j] - offsetI;
+        sqI += d * d;
+      }
+      iRMS = ((sqrt(sqI / N) / 4095.0) * 3.3) / ACS712_SENS;
+      if (iRMS < 0.08) iRMS = 0.0;
+    }
 
     float puissance = vRMS * iRMS * 0.98;
     cumulEnergieWh += (puissance * (maintenant - dernierCalcul)) / 3600000.0;
@@ -90,8 +126,7 @@ void loop() {
       doc["courant"]          = serialized(String(iRMS, 2));
       doc["puissance"]        = (int)round(puissance);
       doc["energie"]          = serialized(String(cumulEnergieWh, 1));
-      doc["frequence"]        = 50.0;
-      doc["facteurPuissance"] = 0.98;
+      doc["relais"]           = relaisLocalActif;
 
       String payload;
       serializeJson(doc, payload);
@@ -100,15 +135,11 @@ void loop() {
       if (code > 0) {
         StaticJsonDocument<512> res;
         deserializeJson(res, http.getString());
-        // Application de la consigne Relais reçue du serveur
-        bool etatRelais = res["relais"] | true;
-        digitalWrite(PIN_RELAIS, etatRelais ? HIGH : LOW);
-        
-        // Synchronisation des seuils de sécurité
-        if (res.containsKey("settings")) {
-          seuilMinVoltage = res["settings"]["minVoltage"] | seuilMinVoltage;
-          seuilMaxVoltage = res["settings"]["maxVoltage"] | seuilMaxVoltage;
-          seuilMaxCurrent = res["settings"]["maxCurrent"] | seuilMaxCurrent;
+        if (res.containsKey("relais")) {
+          bool relaisCmd = res["relais"].as<bool>();
+          if (relaisCmd != relaisLocalActif) {
+            appliquerRelais(relaisCmd);
+          }
         }
       }
       http.end();

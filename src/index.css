@@ -123,6 +123,64 @@ body {
   animation: dangerPulse 1.2s ease-in-out infinite;
 }
 
+@keyframes hudSpinSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes hudSpinReverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes hudPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+}
+
+@keyframes neonGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 8px currentColor);
+  }
+  50% {
+    filter: drop-shadow(0 0 16px currentColor);
+  }
+}
+
+.animate-hud-spin {
+  animation: hudSpinSlow 24s linear infinite;
+}
+
+.animate-hud-spin-reverse {
+  animation: hudSpinReverse 18s linear infinite;
+}
+
+.animate-hud-spin-fast {
+  animation: hudSpinSlow 8s linear infinite;
+}
+
+.animate-hud-pulse {
+  animation: hudPulse 3s ease-in-out infinite;
+}
+
+.animate-neon-glow {
+  animation: neonGlow 2.5s ease-in-out infinite;
+}
+
 /* Custom Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

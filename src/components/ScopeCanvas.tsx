@@ -128,12 +128,12 @@ export const ScopeCanvas: React.FC<ScopeCanvasProps> = ({ voltage, current }) =>
   }, [voltage, current]);
 
   return (
-    <div className="glass-panel p-3.5 sm:p-4 rounded-2xl mb-5 relative overflow-hidden group">
+    <div className="glass-panel p-2 sm:p-2.5 rounded-2xl relative overflow-hidden group">
       {/* Canvas Scope Display */}
       <div className="relative rounded-xl overflow-hidden border border-cyan-500/20 shadow-inner">
         <canvas
           ref={canvasRef}
-          className="w-full aspect-[6/1] sm:aspect-[8/1] min-h-[64px] block cursor-crosshair"
+          className="w-full aspect-[8/1] sm:aspect-[12/1] min-h-[50px] max-h-[70px] block cursor-crosshair"
         />
       </div>
     </div>

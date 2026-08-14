@@ -255,92 +255,24 @@ async function startServer() {
     res.json({ status: 'ok', settings, state });
   });
 
-  // 6. Provide ESP32 C++ Code snippet endpoint
+  // 6. Provide ESP32 C++ Code download and snippet endpoint
+  app.get('/smart_energy_monitor_esp32.ino', (req, res) => {
+    const inoPath = path.join(process.cwd(), 'public', 'smart_energy_monitor_esp32.ino');
+    res.download(inoPath, 'smart_energy_monitor_esp32.ino');
+  });
+
   app.get('/api/esp32/code', (req, res) => {
     const host = req.get('host') || 'localhost:3000';
     const proto = req.protocol || 'http';
-    const code = `#include <WiFi.h>
-#include <HTTPClient.h>
-#include <ArduinoJson.h>
-
-// --- Configuration Wi-Fi ---
-const char* ssid     = "VOTRE_WIFI_SSID";
-const char* password = "VOTRE_WIFI_PASSWORD";
-
-// --- Configuration Serveur API ---
-const char* serverUrl = "${proto}://${host}/api/esp32/data";
-
-// --- Pins Matériel ---
-const int RELAY_PIN = 26;   // Pin de commande du Relais
-const int VOLT_PIN  = 34;   // Pin Capteur Tension (ZMPT101B / PZEM)
-const int CURR_PIN  = 35;   // Pin Capteur Courant (ACS712)
-
-// --- Seuils configurés reçus du serveur ---
-float minVoltage = 185.0;
-float maxVoltage = 253.0;
-float maxCurrent = 10.0;
-
-void setup() {
-  Serial.begin(115200);
-  pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, HIGH); // Actif par défaut
-
-  WiFi.begin(ssid, password);
-  Serial.print("Connexion au Wi-Fi");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\\nWi-Fi connecté ! IP: " + WiFi.localIP().toString());
-}
-
-void loop() {
-  if (WiFi.status() == WL_CONNECTED) {
-    // 1. Lecture des capteurs
-    int rawV = analogRead(VOLT_PIN);
-    int rawI = analogRead(CURR_PIN);
-    float tension = (rawV / 4095.0) * 230.0; // Ajuster selon votre étalonnage
-    float courant = (rawI / 4095.0) * 5.0;
-
-    // 2. Préparation du JSON pour l'envoi
-    HTTPClient http;
-    http.begin(serverUrl);
-    http.addHeader("Content-Type", "application/json");
-
-    StaticJsonDocument<256> doc;
-    doc["tension"] = tension;
-    doc["courant"] = courant;
-    doc["puissance"] = tension * courant;
-
-    String requestBody;
-    serializeJson(doc, requestBody);
-
-    int httpResponseCode = http.POST(requestBody);
-
-    if (httpResponseCode > 0) {
-      String response = http.getString();
-      StaticJsonDocument<512> resDoc;
-      deserializeJson(resDoc, response);
-
-      // 3. Application de la commande Relais renvoyée par le serveur
-      bool relaisEtat = resDoc["relais"] | true;
-      digitalWrite(RELAY_PIN, relaisEtat ? HIGH : LOW);
-
-      // 4. Synchronisation des seuils de sécurité configurés
-      minVoltage = resDoc["settings"]["minVoltage"] | minVoltage;
-      maxVoltage = resDoc["settings"]["maxVoltage"] | maxVoltage;
-      maxCurrent = resDoc["settings"]["maxCurrent"] | maxCurrent;
-
-      Serial.printf("Envoyé: %.1fV, %.2fA -> Relais: %s\\n", tension, courant, relaisEtat ? "ON" : "OFF");
-    } else {
-      Serial.printf("Erreur d'envoi HTTP: %d\\n", httpResponseCode);
+    const inoPath = path.join(process.cwd(), 'public', 'smart_energy_monitor_esp32.ino');
+    try {
+      const fs = require('fs');
+      let code = fs.readFileSync(inoPath, 'utf8');
+      code = code.replace('http://192.168.1.50:3000/api/esp32/data', `${proto}://${host}/api/esp32/data`);
+      res.type('text/plain').send(code);
+    } catch {
+      res.redirect('/smart_energy_monitor_esp32.ino');
     }
-    http.end();
-  }
-  delay(1000); // Poll toutes les secondes
-}
-`;
-    res.type('text/plain').send(code);
   });
 
   // Vite middleware for development

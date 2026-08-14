@@ -18,7 +18,7 @@ import {
   generateFullReportPdfHtml,
   exportOrPrintPdf,
 } from './utils/pdfUtils';
-import { FileText, Download, CheckCircle2, ShieldCheck, Shield, ChevronRight, Zap } from 'lucide-react';
+import { FileText, Download, CheckCircle2, ShieldCheck, Shield, ChevronRight, Zap, AlertTriangle, ZapOff, Power } from 'lucide-react';
 
 const INTERVALLE_RELEVE_MS = 60000; // 1 minute snapshot for PDF history
 
@@ -135,13 +135,15 @@ export default function App() {
   // UI Modals & Notifications
   const [isEnergyModalOpen, setIsEnergyModalOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<'info' | 'success' | 'warning' | 'danger'>('info');
   const [reportHtml, setReportHtml] = useState<string>('');
 
-  const showToast = useCallback((msg: string) => {
+  const showToast = useCallback((msg: string, type: 'info' | 'success' | 'warning' | 'danger' = 'info') => {
     setToastMessage(msg);
+    setToastType(type);
     setTimeout(() => {
       setToastMessage((prev) => (prev === msg ? null : prev));
-    }, 2500);
+    }, 2800);
   }, []);
 
   // Record history ONLY for notable incidents, alerts, or state transitions
@@ -158,7 +160,17 @@ export default function App() {
       };
       setHistoriqueRecords((prev) => [newRecord, ...prev]);
 
-      // Sound alert on new incident if enabled
+      // Sound alert & auto-toast on state transitions
+      if (newData.tension === 0) {
+        showToast('COUPURE SECTEUR (0V) DÉTECTÉE', 'danger');
+      } else if (newData.niveau === 'DANGER') {
+        showToast(newData.message || 'ALERTE CRITIQUE DE SÉCURITÉ', 'danger');
+      } else if (newData.niveau === 'ATTENTION') {
+        showToast(newData.message || 'AVERTISSEMENT RÉSEAU DÉTECTÉ', 'warning');
+      } else if (!newData.relais && dernierRelaisRef.current === true) {
+        showToast('RELAIS DÉCONNECTÉ (OFF)', 'warning');
+      }
+
       if (settings.soundAlerts && estIncident) {
         playAlertSound(1046, 0.3);
       }
@@ -166,7 +178,7 @@ export default function App() {
 
     dernierNiveauRef.current = newData.niveau;
     dernierRelaisRef.current = newData.relais;
-  }, [settings.soundAlerts, playAlertSound]);
+  }, [settings.soundAlerts, playAlertSound, showToast]);
 
   // Data Fetching & Live Simulation Loop
   useEffect(() => {
@@ -290,7 +302,10 @@ export default function App() {
   const handleToggleRelay = () => {
     setData((prev) => {
       const nextRelais = !prev.relais;
-      showToast(nextRelais ? 'Relais ACTIVÉ (Vert)' : 'Relais COUPÉ (Rouge)');
+      showToast(
+        nextRelais ? 'Relais ACTIVÉ (ON) - Sortie sous tension' : 'Relais COUPÉ (OFF) - Sortie hors tension',
+        nextRelais ? 'success' : 'warning'
+      );
       return {
         ...prev,
         relais: nextRelais,
@@ -305,20 +320,20 @@ export default function App() {
       ...prev,
       manuel: false,
     }));
-    showToast('Mode AUTOMATIQUE réactivé');
+    showToast('Mode AUTOMATIQUE réactivé avec succès', 'info');
     fetch('/relais?etat=auto').catch(() => {});
   };
 
   const handleRecalibrer = () => {
-    showToast('Recalibration en cours (3s, ne rien brancher)…');
+    showToast('Recalibration en cours (3s, ne rien brancher)…', 'info');
     fetch('/calibrer')
       .then((res) => res.text())
       .then(() => {
-        showToast('Capteurs recalibrés avec succès');
+        showToast('Capteurs recalibrés avec succès', 'success');
       })
       .catch(() => {
         setTimeout(() => {
-          showToast('Capteurs recalibrés avec succès');
+          showToast('Capteurs recalibrés avec succès', 'success');
         }, 1200);
       });
   };
@@ -331,7 +346,7 @@ export default function App() {
   // PDF Export Handlers
   const handleDownloadEnergyPdf = () => {
     if (historyE.length < 2) {
-      showToast('Pas encore assez de données');
+      showToast('Pas encore assez de données', 'warning');
       return;
     }
     const html = generateEnergyPdfHtml(historyE);
@@ -343,7 +358,7 @@ export default function App() {
 
   const handleGenererRapportPDF = () => {
     if (historiqueRecords.length === 0) {
-      showToast('Aucune donnée à exporter pour le moment');
+      showToast('Aucune donnée à exporter pour le moment', 'warning');
       return;
     }
     const html = generateFullReportPdfHtml(historiqueRecords);
@@ -360,18 +375,18 @@ export default function App() {
     : historiqueRecords;
 
   return (
-    <div className="max-w-[1280px] mx-auto p-3.5 sm:p-5 pb-24">
+    <div className="max-w-[1300px] mx-auto p-2 sm:p-3.5 pb-20 sm:pb-4 min-h-screen flex flex-col justify-start">
       {/* Header displayed on all pages */}
       <Header data={data} activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {/* Notification Banner positioned directly below the Header */}
       {toastMessage && (
-        <div className="mb-4 px-4 py-2.5 rounded-2xl bg-slate-950/95 border border-cyan-400/80 text-cyan-200 text-xs font-mono font-bold flex items-center justify-between gap-3 shadow-[0_0_25px_rgba(0,242,254,0.35)] backdrop-blur-md animate-fadeIn">
-          <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0 animate-pulse" />
-            <span className="tracking-wide uppercase">{toastMessage}</span>
+        <div className="mb-2 px-3 py-1.5 rounded-xl bg-slate-950/95 border border-cyan-400/80 text-cyan-200 text-xs font-mono font-bold flex items-center justify-between gap-3 shadow-[0_0_20px_rgba(0,242,254,0.35)] backdrop-blur-md animate-fadeIn">
+          <div className="flex items-center gap-2 min-w-0">
+            <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400 shrink-0 animate-pulse" />
+            <span className="tracking-wide uppercase truncate">{toastMessage}</span>
           </div>
-          <span className="text-[10px] text-cyan-400/90 border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-0.5 rounded-full uppercase shrink-0">
+          <span className="text-[10px] text-cyan-400/90 border border-cyan-500/40 bg-cyan-500/10 px-2 py-0.5 rounded-full uppercase shrink-0 font-bold">
             SYNCHRONISÉ
           </span>
         </div>
@@ -379,13 +394,14 @@ export default function App() {
 
       {/* PAGE 1: DASHBOARD (Notification, Oscillation, Cases Tension/Courant/Puissance/Énergie) */}
       {activeTab === 'dashboard' && (
-        <div className="space-y-4 animate-fadeIn">
+        <div className="space-y-2 sm:space-y-2.5 animate-fadeIn">
           {/* 1. Notification / Status Bar */}
           <StatusBar
             niveau={data.niveau}
             message={data.message}
             relais={data.relais}
             tension={data.tension}
+            courant={data.courant}
           />
 
           {/* 2. Oscillation - Live Oscilloscope Signal Waveform */}

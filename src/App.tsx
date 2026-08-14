@@ -27,20 +27,21 @@ export default function App() {
 
   // Current Live State
   const [data, setData] = useState<ESP32Data>({
-    tension: 228.4,
-    courant: 2.12,
-    puissance: 484,
-    energie: 1420.5, // Wh
+    tension: 0,
+    courant: 0,
+    puissance: 0,
+    energie: 0,
     niveau: 'NORMAL',
-    message: 'Système normal',
+    message: 'En attente de connexion du module ESP32...',
     relais: true,
     manuel: false,
     rearmement: -1,
     frequence: 50.0,
     facteurPuissance: 0.98,
-    puissanceApparente: 485,
-    temperatureBord: 36.4,
-    wifiConnected: true,
+    puissanceApparente: 0,
+    temperatureBord: 30.0,
+    wifiConnected: false,
+    esp32Connected: false,
   });
 
   // Simulation state parameters matching hardware logic
@@ -244,13 +245,33 @@ export default function App() {
   // Data Fetching & Live Simulation Loop
   useEffect(() => {
     const interval = setInterval(() => {
-      fetch('/data')
+      const url = simulationMode !== 'normal' ? '/data?simulate=true' : '/data';
+      fetch(url)
         .then((res) => res.json())
         .then((fetchedData: ESP32Data) => {
-          setData(fetchedData);
+          let updatedData = { ...fetchedData };
+          // If simulation mode is active on frontend, overlay simulation fault
+          if (simulationMode === 'outage') {
+            updatedData.tension = 0;
+            updatedData.courant = 0;
+            updatedData.puissance = 0;
+            updatedData.niveau = 'DANGER';
+            updatedData.message = 'Coupure secteur (0V) simulée';
+          } else if (simulationMode === 'overvoltage') {
+            updatedData.tension = 265.4;
+            updatedData.niveau = 'DANGER';
+            updatedData.message = 'Surtension secteur critique (265.4V > 253V)';
+          } else if (simulationMode === 'overcurrent') {
+            updatedData.courant = 5.50;
+            updatedData.puissance = Math.round(updatedData.tension * 5.5);
+            updatedData.niveau = 'ATTENTION';
+            updatedData.message = 'Surcharge courant élevée (5.50A)';
+          }
+
+          setData(updatedData);
           if (fetchedData.settings) {
             setSettings((prev) => {
-              const s = fetchedData.settings;
+              const s = fetchedData.settings!;
               if (
                 prev.minVoltage === s.minVoltage &&
                 prev.maxVoltage === s.maxVoltage &&
@@ -263,86 +284,20 @@ export default function App() {
               return { ...prev, ...s };
             });
           }
-          setHistoryV((prev) => [...prev.slice(-59), fetchedData.tension]);
-          setHistoryI((prev) => [...prev.slice(-59), fetchedData.courant]);
-          setHistoryP((prev) => [...prev.slice(-59), fetchedData.puissance]);
-          setHistoryE((prev) => [...prev.slice(-59), fetchedData.energie]);
-          recordIfPertinent(fetchedData);
+          setHistoryV((prev) => [...prev.slice(-59), updatedData.tension]);
+          setHistoryI((prev) => [...prev.slice(-59), updatedData.courant]);
+          setHistoryP((prev) => [...prev.slice(-59), updatedData.puissance]);
+          setHistoryE((prev) => [...prev.slice(-59), updatedData.energie]);
+          recordIfPertinent(updatedData);
         })
         .catch(() => {
-          // Simulation fallback dynamically evaluating configurable settings thresholds
-          const curSettings = settingsRef.current;
-          phaseRef.current += 0.3;
-          const noise = () => (Math.random() - 0.5) * 0.8;
-
-          let tension = 228.0 + Math.sin(phaseRef.current * 0.2) * 2 + noise();
-          let courant = Math.max(0, 2.12 + Math.sin(phaseRef.current * 0.35) * 1.1 + noise() * 0.2);
-
-          let niveau: ESP32Data['niveau'] = 'NORMAL';
-          let message = 'Système normal';
-
-          if (simulationMode === 'outage') {
-            tension = 0;
-            courant = 0;
-            niveau = 'DANGER';
-            message = 'Coupure secteur (0V) détectée';
-          } else if (simulationMode === 'overvoltage') {
-            tension = Number((curSettings.maxVoltage + 12.4 + noise()).toFixed(1));
-            niveau = 'DANGER';
-            message = `Surtension secteur critique (>${curSettings.maxVoltage}V)`;
-          } else if (simulationMode === 'overcurrent') {
-            courant = Number((curSettings.maxCurrent * 0.6 + 1.2 + noise() * 0.3).toFixed(2));
-            niveau = 'ATTENTION';
-            message = `Surcharge courant élevée (>${(curSettings.maxCurrent * 0.5).toFixed(1)}A)`;
-          } else {
-            // Live threshold evaluation against user settings
-            if (tension > curSettings.maxVoltage) {
-              niveau = 'DANGER';
-              message = `Surtension secteur (>${curSettings.maxVoltage}V)`;
-            } else if (tension < curSettings.minVoltage && tension > 0) {
-              niveau = 'ATTENTION';
-              message = `Sous-tension secteur (<${curSettings.minVoltage}V)`;
-            } else if (courant > curSettings.maxCurrent) {
-              niveau = 'ATTENTION';
-              message = `Surcharge courant (>${curSettings.maxCurrent}A)`;
-            }
-          }
-
-          tension = Number(tension.toFixed(1));
-          courant = Number(courant.toFixed(2));
-          const puissance = Math.round(tension * courant);
-
-          energieSimRef.current += puissance / 3600; // Wh accumulator
-          const nextEnergy = Number(energieSimRef.current.toFixed(1));
-
-          const freq = 49.95 + Math.random() * 0.1;
-          const pf = 0.97 + Math.random() * 0.02;
-
-          setData((prev) => {
-            const nextData: ESP32Data = {
-              tension,
-              courant,
-              puissance,
-              energie: nextEnergy,
-              niveau,
-              message,
-              relais: prev.relais,
-              manuel: prev.manuel,
-              rearmement: prev.rearmement,
-              frequence: Number(freq.toFixed(2)),
-              facteurPuissance: Number(pf.toFixed(2)),
-              puissanceApparente: Math.round(tension * courant * 1.02),
-              temperatureBord: Number((35.5 + Math.random() * 1.2).toFixed(1)),
-            };
-
-            setHistoryV((h) => [...h.slice(-59), tension]);
-            setHistoryI((h) => [...h.slice(-59), courant]);
-            setHistoryP((h) => [...h.slice(-59), puissance]);
-            setHistoryE((h) => [...h.slice(-59), nextEnergy]);
-            recordIfPertinent(nextData);
-
-            return nextData;
-          });
+          // Offline browser fallback
+          setData((prev) => ({
+            ...prev,
+            wifiConnected: false,
+            esp32Connected: false,
+            message: 'Application Hors-Ligne (Erreur réseau)',
+          }));
         });
     }, 1000);
 

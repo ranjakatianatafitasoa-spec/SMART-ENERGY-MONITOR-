@@ -108,16 +108,30 @@ async function startServer() {
 
   // 1. GET /data & GET /api/data -> Main endpoint for web app frontend
   const handleGetData = (req: express.Request, res: express.Response) => {
-    const isEspActive = Date.now() - state.lastEsp32Seen < 8000;
+    // A physical ESP32 is considered active if it sent an HTTP heartbeat within the last 3.5 seconds
+    const isEspActive = (Date.now() - state.lastEsp32Seen < 3500) && state.lastEsp32Seen > 0;
     state.esp32Connected = isEspActive;
 
-    if (!isEspActive) {
-      // Fallback simulation when no physical ESP32 is connected
+    const isSimulate = req.query.simulate === 'true';
+
+    if (!isEspActive && !isSimulate) {
+      // When no real ESP32 is transmitting and simulation is not requested:
+      state.tension = 0;
+      state.courant = 0;
+      state.puissance = 0;
+      state.puissanceApparente = 0;
+      if (state.lastEsp32Seen === 0) {
+        state.niveau = 'NORMAL';
+        state.message = 'En attente de transmission ESP32 (Wi-Fi déconnecté)';
+      } else {
+        state.niveau = 'ATTENTION';
+        state.message = 'Signal ESP32 interrompu (Wi-Fi déconnecté)';
+      }
+    } else if (isSimulate && !isEspActive) {
+      // Fallback simulation ONLY when explicitly requested via query parameter
       simPhase += 0.2;
       const noise = (Math.random() - 0.5) * 0.6;
       const rawV = Number((228.0 + Math.sin(simPhase * 0.2) * 2 + noise).toFixed(1));
-      
-      // If relay is cut off, current and active power drop to 0
       const isRelaisOpen = state.relais;
       const rawI = isRelaisOpen ? Number((Math.max(0, 2.12 + Math.sin(simPhase * 0.35) * 1.1 + noise * 0.2)).toFixed(2)) : 0;
       const pf = Number((0.97 + Math.random() * 0.02).toFixed(2));
@@ -125,7 +139,6 @@ async function startServer() {
       simEnergy += p / 3600;
 
       const { niveau, message, finalRelais } = evaluateThresholds(rawV, rawI, state.relais);
-
       state.tension = rawV;
       state.courant = rawI;
       state.puissance = p;
@@ -141,7 +154,8 @@ async function startServer() {
 
     res.json({
       ...state,
-      wifiConnected: true,
+      wifiConnected: isEspActive || isSimulate,
+      esp32Connected: isEspActive,
       settings,
     });
   };

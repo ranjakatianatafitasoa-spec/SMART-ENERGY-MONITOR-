@@ -79,8 +79,8 @@ export const ScopeCanvas: React.FC<ScopeCanvasProps> = ({ voltage, current }) =>
       }
 
       if (w > 0 && h > 0) {
-        const vAmplitude = Math.max(0.05, Math.min(1.4, voltage / 230)) * (midY * 0.72);
-        const iAmplitude = Math.max(0.05, Math.min(1.4, current / 5)) * (midY * 0.45);
+        const vAmplitude = voltage > 0 ? Math.max(0.05, Math.min(1.4, voltage / 230)) * (midY * 0.72) : 0;
+        const iAmplitude = current > 0 ? Math.max(0.05, Math.min(1.4, current / 5)) * (midY * 0.45) : 0;
 
         // 1. Draw Current Waveform (Amber / Gold)
         if (current > 0) {
@@ -99,15 +99,15 @@ export const ScopeCanvas: React.FC<ScopeCanvasProps> = ({ voltage, current }) =>
           ctx.stroke();
         }
 
-        // 2. Draw Primary Voltage Waveform (Cyan / Neon Violet)
-        ctx.shadowBlur = 14;
-        ctx.shadowColor = '#00f2fe';
-        ctx.strokeStyle = voltage > 0 ? '#00f2fe' : 'rgba(244, 63, 94, 0.6)';
-        ctx.lineWidth = 2.5;
+        // 2. Draw Primary Voltage Waveform (Cyan / Neon Violet / Flatline on 0V)
+        ctx.shadowBlur = voltage > 0 ? 14 : 4;
+        ctx.shadowColor = voltage > 0 ? '#00f2fe' : 'rgba(148, 163, 184, 0.4)';
+        ctx.strokeStyle = voltage > 0 ? '#00f2fe' : 'rgba(148, 163, 184, 0.5)';
+        ctx.lineWidth = voltage > 0 ? 2.5 : 1.5;
         ctx.beginPath();
 
         for (let x = 0; x <= w; x += 2) {
-          const y = midY - Math.sin(x * 0.04 + phase) * vAmplitude;
+          const y = voltage > 0 ? (midY - Math.sin(x * 0.04 + phase) * vAmplitude) : midY;
           if (x === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         }

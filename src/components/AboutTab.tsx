@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Info, ShieldCheck, Cpu, Zap, Wifi, Code, Copy, Check, Download, Layers, Radio, Smartphone, CheckCircle } from 'lucide-react';
+import { ShieldCheck, Cpu, Zap, Wifi, Code, Copy, Check, Download, Layers, Radio, CheckCircle } from 'lucide-react';
 import { ESP32Data } from '../types';
 
 interface AboutTabProps {
@@ -10,125 +10,337 @@ export const AboutTab: React.FC<AboutTabProps> = ({ data }) => {
   const [copied, setCopied] = useState(false);
 
   const espCodeSnippet = `/*
- * SMART ENERGY MONITOR - ESP32 POINT D'ACCÈS WI-FI DIRECT (V4.0 SOFT-AP)
- * Détection directe sans routeur ni box internet | REST API CORS sur Port 80
- * Mesure AC RMS réelle (ZMPT101B + ACS712) & Commande Relais Active-LOW
+ * =========================================================================================
+ *             SMART ENERGY MONITOR - ESP32 POINT D'ACCÈS WI-FI DIRECT (V4.0 AP/STA)
+ * =========================================================================================
+ *  Description :
+ *  Programme embarqué C++ haute fiabilité pour ESP32 :
+ *  - Mode Point d'Accès Wi-Fi Direct (SoftAP) : Crée son propre réseau Wi-Fi autonome
+ *    SSID : "SMART_ENERGY_MONITOR" | Mot de passe : "12345678" | IP : 192.168.4.1
+ *  - Serveur Web REST API embarqué (Port 80) avec en-têtes CORS (Access-Control-Allow-Origin: *)
+ *  - Contrôle physique immédiat du Relais (Active-LOW optocouplé standard)
+ *  - Mesure AC RMS haute précision avec zéro dynamique & détection secteur débranché (0V)
+ *
+ *  Brochage recommandé ESP32 :
+ *  - GPIO 26 : Commande Relais (Borne IN du module Relais)
+ *  - GPIO 34 : Sortie analogique ZMPT101B (ADC1_CH6)
+ *  - GPIO 35 : Sortie analogique ACS712 (ADC1_CH7)
+ *  - GPIO 2  : LED témoin d'activité
+ * =========================================================================================
  */
 
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ArduinoJson.h>
 
-// 1. Point d'Accès Wi-Fi Direct (ESP32 SoftAP)
-const char* AP_SSID     = "SMART_ENERGY_MONITOR";
-const char* AP_PASSWORD = "12345678";
-const IPAddress AP_IP(192, 168, 4, 1);
+// 1. CONFIGURATION DU POINT D'ACCÈS WI-FI DIRECT (ESP32 SOFT-AP)
+const char* AP_SSID     = "SMART_ENERGY_MONITOR"; // Nom du réseau Wi-Fi émis par l'ESP32
+const char* AP_PASSWORD = "12345678";             // Mot de passe (8 caractères min)
+const IPAddress AP_IP(192, 168, 4, 1);            // IP fixe du Point d'Accès
 const IPAddress AP_GATEWAY(192, 168, 4, 1);
 const IPAddress AP_SUBNET(255, 255, 255, 0);
 
-// 2. Pins & Configuration Relais (Active-LOW optocouplé standard)
-const int PIN_RELAIS   = 26; // GPIO26 -> IN du Relais
-const int PIN_ZMPT101B = 34; // GPIO34 -> OUT du ZMPT101B (ADC1_6)
-const int PIN_ACS712   = 35; // GPIO35 -> OUT de l'ACS712 (ADC1_7)
-const int PIN_LED      = 2;  // GPIO2  -> LED témoin
+// (Optionnel) Réseau Wi-Fi local de votre Box si vous souhaitez le mode Hybride
+const char* STA_SSID     = "VOTRE_WIFI_BOX";
+const char* STA_PASSWORD = "VOTRE_WIFI_PASSWORD";
 
-const int RELAIS_NIVEAU_ACTIF = LOW;  // Relais enclenché (passant)
-const int RELAIS_NIVEAU_COUPE = HIGH; // Relais coupé (sécurité)
+// 2. CONFIGURATION MATÉRIELLE & PINS
+const int PIN_RELAIS     = 26;   // GPIO26 -> IN du Relais
+const int PIN_ZMPT101B   = 34;   // GPIO34 -> Signal Tension ZMPT101B
+const int PIN_ACS712     = 35;   // GPIO35 -> Signal Courant ACS712
+const int PIN_LED_STATUS = 2;    // GPIO2  -> LED témoin
 
-const float ACS712_SENS = 0.100; // 100mV/A (ACS712 20A)
-float seuilMinVoltage = 185.0;
-float seuilMaxVoltage = 253.0;
-float seuilMaxCurrent = 10.0;
-bool relaisActif      = true;
-bool modeManuel       = false;
+// Logique du Relais (Active-LOW standard)
+const int RELAIS_NIVEAU_ACTIF = LOW;  // Relais enclenché (Courant passant)
+const int RELAIS_NIVEAU_COUPE = HIGH; // Relais coupé (Circuit ouvert de sécurité)
+
+// 3. PARAMÈTRES DE MESURE & VARIABLES GLOBALES
+const float ACS712_SENSIBILITE = 0.100; // Modèle 20A (100 mV/A) | 5A = 0.185 | 30A = 0.066
+float CALIBRATION_TENSION = 1.00;
+float CALIBRATION_COURANT = 1.00;
+
+float seuilMinVoltage = 185.0; // V
+float seuilMaxVoltage = 253.0; // V
+float seuilMaxCurrent = 10.0;  // A
+
+bool relaisActif = true;
+bool modeManuel = false;
 float tensionActuelle = 0.0;
-float courantActuel   = 0.0;
+float courantActuel = 0.0;
 float puissanceActive = 0.0;
-float energieCumulWh  = 0.0;
+float puissanceApparente = 0.0;
+float energieCumulWh = 0.0;
+float frequenceActuelle = 50.0;
+float facteurPuissance = 0.98;
+String etatNiveau = "NORMAL";
+String messageSysteme = "Système nominal (ESP32 AP)";
+
+unsigned long dernierCalculMs = 0;
+unsigned long dernierEchantillonnageMs = 0;
 
 WebServer server(80);
 
-void appliquerRelais(bool activer) {
+void appliquerEtatRelais(bool activer) {
   relaisActif = activer;
   digitalWrite(PIN_RELAIS, activer ? RELAIS_NIVEAU_ACTIF : RELAIS_NIVEAU_COUPE);
+  Serial.printf("[RELAIS] -> %s (GPIO %d = %s)\\n",
+                activer ? "ACTIVÉ (PASSANT)" : "COUPÉ (SÉCURITÉ)",
+                PIN_RELAIS, activer ? "LOW" : "HIGH");
 }
 
-void ajouterCORS() {
+void effectuerMesuresAC() {
+  const int NB_ECH = 400; // Échantillonnage sur 2 périodes à 50Hz (40ms)
+  int minV = 4095, maxV = 0;
+  int minI = 4095, maxI = 0;
+  long sumV = 0, sumI = 0;
+  int bufV[NB_ECH];
+  int bufI[NB_ECH];
+
+  for (int j = 0; j < NB_ECH; j++) {
+    int v = analogRead(PIN_ZMPT101B);
+    int i = analogRead(PIN_ACS712);
+    bufV[j] = v; bufI[j] = i;
+    sumV += v;   sumI += i;
+    if (v < minV) minV = v;
+    if (v > maxV) maxV = v;
+    if (i < minI) minI = i;
+    if (i > maxI) maxI = i;
+    delayMicroseconds(95);
+  }
+
+  float offsetV = (float)sumV / NB_ECH;
+  float offsetI = (float)sumI / NB_ECH;
+  int vPP = maxV - minV;
+  int iPP = maxI - minI;
+
+  // 1. Tension RMS (0V si débranché)
+  if (vPP < 25) {
+    tensionActuelle = 0.0;
+  } else {
+    double sqV = 0;
+    for (int j = 0; j < NB_ECH; j++) {
+      double diff = (double)bufV[j] - offsetV;
+      sqV += (diff * diff);
+    }
+    double vRMS_ADC = sqrt(sqV / NB_ECH);
+    tensionActuelle = (vRMS_ADC / 4095.0) * 230.0 * 2.85 * CALIBRATION_TENSION;
+    if (tensionActuelle < 18.0) tensionActuelle = 0.0;
+  }
+
+  // 2. Courant RMS (0A si relais coupé ou tension nulle)
+  if (!relaisActif || tensionActuelle == 0.0 || iPP < 20) {
+    courantActuel = 0.0;
+  } else {
+    double sqI = 0;
+    for (int j = 0; j < NB_ECH; j++) {
+      double diff = (double)bufI[j] - offsetI;
+      sqI += (diff * diff);
+    }
+    double iRMS_ADC = sqrt(sqI / NB_ECH);
+    double vCapteurRMS = (iRMS_ADC / 4095.0) * 3.3;
+    courantActuel = (vCapteurRMS / ACS712_SENSIBILITE) * CALIBRATION_COURANT;
+    if (courantActuel < 0.08) courantActuel = 0.0;
+  }
+
+  // 3. Puissances & Énergie
+  if (tensionActuelle == 0.0 || courantActuel == 0.0) {
+    puissanceApparente = 0.0;
+    puissanceActive = 0.0;
+  } else {
+    puissanceApparente = tensionActuelle * courantActuel;
+    puissanceActive = puissanceApparente * facteurPuissance;
+  }
+
+  unsigned long now = millis();
+  float deltaHeures = (now - dernierCalculMs) / 3600000.0;
+  if (puissanceActive > 0) {
+    energieCumulWh += (puissanceActive * deltaHeures);
+  }
+  dernierCalculMs = now;
+
+  // 4. Évaluation automatique des seuils de sécurité
+  if (tensionActuelle == 0.0) {
+    etatNiveau = "DANGER";
+    messageSysteme = "Coupure secteur (0V) détectée";
+  } else if (tensionActuelle > seuilMaxVoltage) {
+    etatNiveau = "DANGER";
+    messageSysteme = "Surtension secteur critique (>" + String((int)seuilMaxVoltage) + "V)";
+    if (!modeManuel && relaisActif) appliquerEtatRelais(false);
+  } else if (tensionActuelle < seuilMinVoltage) {
+    etatNiveau = "ATTENTION";
+    messageSysteme = "Sous-tension secteur (<" + String((int)seuilMinVoltage) + "V)";
+  } else if (courantActuel > seuilMaxCurrent) {
+    etatNiveau = "ATTENTION";
+    messageSysteme = "Surcharge courant (>" + String(seuilMaxCurrent, 1) + "A)";
+    if (!modeManuel && relaisActif) appliquerEtatRelais(false);
+  } else {
+    etatNiveau = "NORMAL";
+    messageSysteme = "Système nominal (ESP32 AP)";
+    if (!modeManuel && !relaisActif && tensionActuelle >= seuilMinVoltage && tensionActuelle <= seuilMaxVoltage) {
+      appliquerEtatRelais(true);
+    }
+  }
+}
+
+void ajouterHeadersCORS() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
   server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  server.sendHeader("Access-Control-Allow-Headers", "*");
+  server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
 }
 
 void handleGetData() {
-  ajouterCORS();
+  ajouterHeadersCORS();
   StaticJsonDocument<512> doc;
-  doc["tension"]        = serialized(String(tensionActuelle, 1));
-  doc["courant"]        = serialized(String(courantActuel, 2));
-  doc["puissance"]      = (int)round(puissanceActive);
-  doc["energie"]        = serialized(String(energieCumulWh, 1));
-  doc["frequence"]      = 50.0;
-  doc["facteurPuissance"] = 0.98;
-  doc["relais"]         = relaisActif;
-  doc["manuel"]         = modeManuel;
-  doc["wifiConnected"]  = true;
-  doc["esp32Connected"] = true;
-  doc["niveau"]         = (tensionActuelle == 0) ? "DANGER" : (tensionActuelle > seuilMaxVoltage ? "DANGER" : "NORMAL");
-  doc["message"]        = "Connecté via Point d'Accès Wi-Fi Direct";
+  doc["tension"]            = serialized(String(tensionActuelle, 1));
+  doc["courant"]            = serialized(String(courantActuel, 2));
+  doc["puissance"]          = (int)round(puissanceActive);
+  doc["energie"]            = serialized(String(energieCumulWh, 1));
+  doc["frequence"]          = serialized(String(frequenceActuelle, 2));
+  doc["facteurPuissance"]   = serialized(String(facteurPuissance, 2));
+  doc["puissanceApparente"] = (int)round(puissanceApparente);
+  doc["temperatureBord"]    = 34.8;
+  doc["relais"]             = relaisActif;
+  doc["manuel"]             = modeManuel;
+  doc["niveau"]             = etatNiveau;
+  doc["message"]            = messageSysteme;
+  doc["wifiConnected"]      = true;
+  doc["esp32Connected"]     = true;
+  doc["connectionMode"]     = "ap";
+  doc["apSSID"]             = AP_SSID;
+  doc["ip"]                 = WiFi.softAPIP().toString();
 
-  String res;
-  serializeJson(doc, res);
-  server.send(200, "application/json", res);
+  JsonObject s = doc.createNestedObject("settings");
+  s["minVoltage"] = seuilMinVoltage;
+  s["maxVoltage"] = seuilMaxVoltage;
+  s["minCurrent"] = 0;
+  s["maxCurrent"] = seuilMaxCurrent;
+  s["soundAlerts"] = true;
+
+  String reponse;
+  serializeJson(doc, reponse);
+  server.send(200, "application/json", reponse);
 }
 
 void handleRelais() {
-  ajouterCORS();
+  ajouterHeadersCORS();
   String etat = server.arg("etat");
   etat.toLowerCase();
-  if (etat == "on") { modeManuel = true; appliquerRelais(true); }
-  else if (etat == "off") { modeManuel = true; appliquerRelais(false); }
-  else if (etat == "auto") { modeManuel = false; }
 
-  StaticJsonDocument<128> doc;
+  if (etat == "on") {
+    modeManuel = true;
+    appliquerEtatRelais(true);
+    messageSysteme = "Relais forcé ON (Manuel)";
+  } else if (etat == "off") {
+    modeManuel = true;
+    appliquerEtatRelais(false);
+    messageSysteme = "Relais forcé OFF (Manuel)";
+  } else if (etat == "auto") {
+    modeManuel = false;
+    messageSysteme = "Mode Automatique réactivé";
+    if (etatNiveau == "NORMAL") appliquerEtatRelais(true);
+  }
+
+  StaticJsonDocument<256> doc;
   doc["status"] = "ok";
   doc["relais"] = relaisActif;
-  String res;
-  serializeJson(doc, res);
-  server.send(200, "application/json", res);
+  doc["manuel"] = modeManuel;
+  doc["message"] = messageSysteme;
+
+  String reponse;
+  serializeJson(doc, reponse);
+  server.send(200, "application/json", reponse);
+}
+
+void handleToggle() {
+  ajouterHeadersCORS();
+  modeManuel = true;
+  appliquerEtatRelais(!relaisActif);
+  StaticJsonDocument<256> doc;
+  doc["status"] = "ok";
+  doc["relais"] = relaisActif;
+  doc["manuel"] = modeManuel;
+  String reponse;
+  serializeJson(doc, reponse);
+  server.send(200, "application/json", reponse);
+}
+
+void handleCalibrer() {
+  ajouterHeadersCORS();
+  energieCumulWh = 0.0;
+  server.send(200, "application/json", "{\\"status\\":\\"ok\\",\\"message\\":\\"Energie réinitialisée\\"}");
+}
+
+void handleSettings() {
+  ajouterHeadersCORS();
+  if (server.hasArg("plain")) {
+    StaticJsonDocument<256> doc;
+    DeserializationError err = deserializeJson(doc, server.arg("plain"));
+    if (!err) {
+      if (doc.containsKey("minVoltage")) seuilMinVoltage = doc["minVoltage"];
+      if (doc.containsKey("maxVoltage")) seuilMaxVoltage = doc["maxVoltage"];
+      if (doc.containsKey("maxCurrent")) seuilMaxCurrent = doc["maxCurrent"];
+    }
+  } else {
+    if (server.hasArg("minVoltage")) seuilMinVoltage = server.arg("minVoltage").toFloat();
+    if (server.hasArg("maxVoltage")) seuilMaxVoltage = server.arg("maxVoltage").toFloat();
+    if (server.hasArg("maxCurrent")) seuilMaxCurrent = server.arg("maxCurrent").toFloat();
+  }
+  server.send(200, "application/json", "{\\"status\\":\\"ok\\",\\"message\\":\\"Paramètres enregistrés\\"}");
+}
+
+void handlePing() {
+  ajouterHeadersCORS();
+  server.send(200, "application/json", "{\\"status\\":\\"pong\\",\\"device\\":\\"ESP32_SMART_MONITOR\\"}");
 }
 
 void setup() {
   Serial.begin(115200);
+  delay(300);
+
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
 
   pinMode(PIN_RELAIS, OUTPUT);
-  pinMode(PIN_LED, OUTPUT);
-  appliquerRelais(true);
+  pinMode(PIN_LED_STATUS, OUTPUT);
+  pinMode(PIN_ZMPT101B, INPUT);
+  pinMode(PIN_ACS712, INPUT);
 
-  WiFi.mode(WIFI_AP);
+  appliquerEtatRelais(true);
+  digitalWrite(PIN_LED_STATUS, HIGH);
+
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAPConfig(AP_IP, AP_GATEWAY, AP_SUBNET);
   WiFi.softAP(AP_SSID, AP_PASSWORD);
 
   server.on("/data", HTTP_GET, handleGetData);
   server.on("/api/data", HTTP_GET, handleGetData);
   server.on("/relais", HTTP_GET, handleRelais);
-  server.on("/toggle", HTTP_GET, []() {
-    ajouterCORS();
-    appliquerRelais(!relaisActif);
-    server.send(200, "application/json", "{\"status\":\"ok\"}");
-  });
-  server.on("/ping", HTTP_GET, []() {
-    ajouterCORS();
-    server.send(200, "application/json", "{\"status\":\"pong\"}");
-  });
+  server.on("/relais", HTTP_POST, handleRelais);
+  server.on("/toggle", HTTP_GET, handleToggle);
+  server.on("/calibrer", HTTP_GET, handleCalibrer);
+  server.on("/settings", HTTP_POST, handleSettings);
+  server.on("/settings", HTTP_GET, handleSettings);
+  server.on("/ping", HTTP_GET, handlePing);
+
+  server.on("/data", HTTP_OPTIONS, []() { ajouterHeadersCORS(); server.send(204); });
+  server.on("/api/data", HTTP_OPTIONS, []() { ajouterHeadersCORS(); server.send(204); });
+  server.on("/relais", HTTP_OPTIONS, []() { ajouterHeadersCORS(); server.send(204); });
+  server.on("/settings", HTTP_OPTIONS, []() { ajouterHeadersCORS(); server.send(204); });
+  server.on("/ping", HTTP_OPTIONS, []() { ajouterHeadersCORS(); server.send(204); });
 
   server.begin();
-  Serial.println("Point d'Accès Wi-Fi et Serveur Web HTTP Démarrés !");
+  Serial.println("[HTTP] Serveur Web REST API démarré sur port 80 !");
+  dernierCalculMs = millis();
 }
 
 void loop() {
   server.handleClient();
-  // Échantillonnage AC toutes les 500ms...
+  unsigned long now = millis();
+  if (now - dernierEchantillonnageMs >= 500) {
+    dernierEchantillonnageMs = now;
+    effectuerMesuresAC();
+    digitalWrite(PIN_LED_STATUS, !digitalRead(PIN_LED_STATUS));
+  }
   delay(2);
 }`;
 

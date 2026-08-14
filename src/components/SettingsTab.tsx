@@ -14,7 +14,7 @@ export interface SystemSettings {
 interface SettingsTabProps {
   settings: SystemSettings;
   onUpdateSettings: (newSettings: SystemSettings) => void;
-  showToast: (msg: string, type?: 'success' | 'danger' | 'info') => void;
+  showToast: (msg: string, type?: 'success' | 'danger' | 'info' | 'warning') => void;
 }
 
 export const SettingsTab: React.FC<SettingsTabProps> = ({
@@ -90,7 +90,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           const d = await res2.json();
           setPingResult({
             ok: true,
-            message: d.esp32Connected ? 'ESP32 connecté au serveur' : 'Serveur local opérationnel',
+            message: d.esp32Connected ? 'ESP32 connecté au serveur' : 'Serveur local actif',
           });
           showToast(d.esp32Connected ? 'ESP32 connecté' : 'Serveur actif', 'success');
           return;
@@ -110,18 +110,25 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   };
 
   const handleSave = () => {
+    // Basic validation
+    if (minVoltage >= maxVoltage) {
+      showToast('La tension minimale doit être inférieure à la tension maximale', 'warning');
+      return;
+    }
+
     const updated: SystemSettings = {
-      minVoltage,
-      maxVoltage,
-      minCurrent,
-      maxCurrent,
+      minVoltage: Number(minVoltage),
+      maxVoltage: Number(maxVoltage),
+      minCurrent: Number(minCurrent),
+      maxCurrent: Number(maxCurrent),
       soundAlerts,
       connectionMode,
       esp32Ip: connectionMode === 'ap' ? '192.168.4.1' : esp32Ip,
     };
+
     onUpdateSettings(updated);
     setSaved(true);
-    showToast('Paramètres enregistrés', 'success');
+    showToast('Paramètres enregistrés et appliqués', 'success');
     setTimeout(() => setSaved(false), 2000);
   };
 
@@ -214,15 +221,25 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {/* Tension Min */}
-          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1.5">
+          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
             <div className="flex justify-between items-center text-slate-300">
               <span className="text-[11px]">Tension Min (Sous-tension)</span>
-              <span className="font-bold text-cyan-400">{minVoltage} V</span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min="120"
+                  max="230"
+                  value={minVoltage}
+                  onChange={(e) => setMinVoltage(Number(e.target.value))}
+                  className="w-16 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-cyan-300 font-bold text-xs text-right focus:outline-none focus:border-cyan-400"
+                />
+                <span className="text-[11px] text-slate-400">V</span>
+              </div>
             </div>
             <input
               type="range"
-              min="150"
-              max="230"
+              min="140"
+              max="225"
               value={minVoltage}
               onChange={(e) => setMinVoltage(Math.min(Number(e.target.value), maxVoltage - 5))}
               className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
@@ -230,15 +247,25 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </div>
 
           {/* Tension Max */}
-          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1.5">
+          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
             <div className="flex justify-between items-center text-slate-300">
               <span className="text-[11px]">Tension Max (Surtension)</span>
-              <span className="font-bold text-cyan-400">{maxVoltage} V</span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min="230"
+                  max="300"
+                  value={maxVoltage}
+                  onChange={(e) => setMaxVoltage(Number(e.target.value))}
+                  className="w-16 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-cyan-300 font-bold text-xs text-right focus:outline-none focus:border-cyan-400"
+                />
+                <span className="text-[11px] text-slate-400">V</span>
+              </div>
             </div>
             <input
               type="range"
               min="230"
-              max="300"
+              max="290"
               value={maxVoltage}
               onChange={(e) => setMaxVoltage(Math.max(Number(e.target.value), minVoltage + 5))}
               className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
@@ -246,17 +273,29 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </div>
 
           {/* Courant Max */}
-          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1.5">
+          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
             <div className="flex justify-between items-center text-slate-300">
               <span className="text-[11px]">Courant Max (Surcharge)</span>
-              <span className="font-bold text-amber-400">{maxCurrent} A</span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  step="0.5"
+                  value={maxCurrent}
+                  onChange={(e) => setMaxCurrent(Number(e.target.value))}
+                  className="w-16 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-amber-300 font-bold text-xs text-right focus:outline-none focus:border-amber-400"
+                />
+                <span className="text-[11px] text-slate-400">A</span>
+              </div>
             </div>
             <input
               type="range"
               min="1"
-              max="50"
+              max="35"
+              step="0.5"
               value={maxCurrent}
-              onChange={(e) => setMaxCurrent(Math.max(Number(e.target.value), minCurrent + 1))}
+              onChange={(e) => setMaxCurrent(Math.max(Number(e.target.value), minCurrent + 0.5))}
               className="w-full accent-amber-400 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
             />
           </div>

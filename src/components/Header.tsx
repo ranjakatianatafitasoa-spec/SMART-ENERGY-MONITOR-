@@ -109,17 +109,20 @@ export const Header: React.FC<HeaderProps> = ({ data, activeTab, setActiveTab })
           </div>
 
           {/* 3. WiFi Status Pill */}
-          <div className={`h-6.5 sm:h-7.5 flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 rounded-lg border backdrop-blur-md transition-all shrink-0 ${
+          <button
+            onClick={() => setActiveTab('settings')}
+            title="Cliquez pour configurer la liaison Wi-Fi / ESP32"
+            className={`h-6.5 sm:h-7.5 flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 rounded-lg border backdrop-blur-md transition-all shrink-0 cursor-pointer ${
             data.wifiConnected === true
-              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_6px_rgba(16,185,129,0.2)]'
-              : 'bg-rose-500/15 border-rose-500/40 text-rose-300 shadow-[0_0_6px_rgba(244,63,94,0.25)]'
+              ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/40 text-emerald-300 shadow-[0_0_6px_rgba(16,185,129,0.2)]'
+              : 'bg-rose-500/15 hover:bg-rose-500/25 border-rose-500/40 text-rose-300 shadow-[0_0_6px_rgba(244,63,94,0.25)]'
           }`}>
             <Wifi className={`w-3 h-3 shrink-0 ${data.wifiConnected === true ? 'animate-pulse text-emerald-400' : 'text-rose-400'}`} />
             <span className="text-[9.5px] sm:text-[11px] font-bold tracking-tight whitespace-nowrap">
               {data.wifiConnected === true ? 'WIFI CONNECTÉ' : 'WIFI DÉCONNECTÉ'}
             </span>
             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${data.wifiConnected === true ? 'bg-emerald-400 shadow-[0_0_5px_#10b981]' : 'bg-rose-500 shadow-[0_0_5px_#f43f5e] animate-ping'}`} />
-          </div>
+          </button>
 
         </div>
       </div>

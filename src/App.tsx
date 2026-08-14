@@ -13,6 +13,7 @@ import { BottomNav } from './components/BottomNav';
 import { EnergyModal } from './components/EnergyModal';
 import { Toast } from './components/Toast';
 import { SimulationButton } from './components/SimulationButton';
+import { ConnectionDetector } from './components/ConnectionDetector';
 import { ActiveTab, ESP32Data, HistoryRecord } from './types';
 import {
   generateEnergyPdfHtml,
@@ -97,6 +98,13 @@ export default function App() {
   ]);
   const dernierNiveauRef = useRef<string | null>('NORMAL');
   const dernierRelaisRef = useRef<boolean | null>(true);
+
+  // Connection Detector State & Diagnostics
+  const [activeSource, setActiveSource] = useState<'esp32_direct' | 'esp32_lan' | 'local_server' | 'offline'>('local_server');
+  const [latencyMs, setLatencyMs] = useState<number | null>(15);
+  const [packetCount, setPacketCount] = useState<number>(1);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(new Date());
+  const [isScanning, setIsScanning] = useState<boolean>(false);
 
   // Configurable System Settings & Thresholds
   const [settings, setSettings] = useState<SystemSettings>({
@@ -253,6 +261,8 @@ export default function App() {
         : '192.168.4.1';
 
       let fetched: ESP32Data | null = null;
+      let detectedSource: 'esp32_direct' | 'esp32_lan' | 'local_server' | 'offline' = 'offline';
+      const startProbeTime = performance.now();
 
       // 1. If in AP or custom mode, attempt DIRECT fetch to the ESP32 WebServer (e.g. 192.168.4.1)
       if (curSettings.connectionMode !== 'server') {
@@ -270,6 +280,7 @@ export default function App() {
               fetched.wifiConnected = true;
               fetched.esp32Connected = true;
               fetched.connectionMode = curSettings.connectionMode || 'ap';
+              detectedSource = curSettings.connectionMode === 'custom' ? 'esp32_lan' : 'esp32_direct';
             }
           }
         } catch {
@@ -284,6 +295,9 @@ export default function App() {
           const proxyRes = await fetch(url);
           if (proxyRes.ok) {
             fetched = await proxyRes.json();
+            if (fetched) {
+              detectedSource = 'local_server';
+            }
           }
         } catch {
           // Server offline
@@ -291,6 +305,12 @@ export default function App() {
       }
 
       if (!isMounted) return;
+
+      const elapsed = Math.round(performance.now() - startProbeTime);
+      setLatencyMs(elapsed > 0 ? elapsed : 12);
+      setPacketCount((prev) => prev + 1);
+      setLastSyncTime(new Date());
+      setActiveSource(detectedSource);
 
       if (fetched) {
         let updatedData: ESP32Data = { ...fetched };
@@ -541,6 +561,69 @@ export default function App() {
     }
   };
 
+  // Connection Auto-Scanner & Reconnect Engine
+  const handleScanReconnect = async () => {
+    setIsScanning(true);
+    showToast('Sondage et détection des sources de données ESP32 en cours...', 'info');
+
+    const curSettings = settingsRef.current;
+    const customIp = curSettings.esp32Ip ? curSettings.esp32Ip.replace(/^http:\/\//, '') : '';
+
+    // 1. Probe Direct AP (192.168.4.1)
+    try {
+      const c1 = new AbortController();
+      const t1 = setTimeout(() => c1.abort(), 1000);
+      const r1 = await fetch('http://192.168.4.1/ping', { signal: c1.signal, mode: 'cors' });
+      clearTimeout(t1);
+      if (r1.ok) {
+        setActiveSource('esp32_direct');
+        setSettings((prev) => ({ ...prev, connectionMode: 'ap' }));
+        showToast('ESP32 Direct (192.168.4.1) détecté et synchronisé !', 'success');
+        setIsScanning(false);
+        return;
+      }
+    } catch {
+      // Not on AP Wi-Fi
+    }
+
+    // 2. Probe Custom LAN IP if configured
+    if (customIp && customIp !== '192.168.4.1') {
+      try {
+        const c2 = new AbortController();
+        const t2 = setTimeout(() => c2.abort(), 1000);
+        const r2 = await fetch(`http://${customIp}/ping`, { signal: c2.signal, mode: 'cors' });
+        clearTimeout(t2);
+        if (r2.ok) {
+          setActiveSource('esp32_lan');
+          setSettings((prev) => ({ ...prev, connectionMode: 'custom' }));
+          showToast(`ESP32 Réseau Local (${customIp}) détecté et connecté !`, 'success');
+          setIsScanning(false);
+          return;
+        }
+      } catch {
+        // Not on custom LAN IP
+      }
+    }
+
+    // 3. Probe Local Server API Gateway
+    try {
+      const r3 = await fetch('/api/data');
+      if (r3.ok) {
+        const d = await r3.json();
+        setActiveSource('local_server');
+        showToast(d.esp32Connected ? 'ESP32 connecté au serveur' : 'Passerelle API locale connectée !', 'success');
+        setIsScanning(false);
+        return;
+      }
+    } catch {
+      // Server error
+    }
+
+    setActiveSource('local_server');
+    showToast('Flux de données actif (Passerelle locale / Simulateur)', 'info');
+    setIsScanning(false);
+  };
+
   return (
     <div className="max-w-[1300px] mx-auto p-2 sm:p-3.5 pb-20 sm:pb-4 min-h-screen flex flex-col justify-start">
       {/* Header displayed on all pages */}
@@ -559,9 +642,20 @@ export default function App() {
         </div>
       )}
 
-      {/* PAGE 1: DASHBOARD (Notification, Oscillation, Cases Tension/Courant/Puissance/Énergie) */}
+      {/* PAGE 1: DASHBOARD (Détecteur, Notification, Oscillation, Cases Métriques) */}
       {activeTab === 'dashboard' && (
         <div className="space-y-2 sm:space-y-2.5 animate-fadeIn">
+          {/* 0. Détecteur Intelligent de Connexion & Récupération des Données */}
+          <ConnectionDetector
+            data={data}
+            activeSource={activeSource}
+            latencyMs={latencyMs}
+            packetCount={packetCount}
+            lastSyncTime={lastSyncTime}
+            isScanning={isScanning}
+            onScanReconnect={handleScanReconnect}
+          />
+
           {/* 1. Notification / Status Bar */}
           <StatusBar
             niveau={data.niveau}

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'smart-energy-monitor-v1.2';
+const CACHE_NAME = 'smart-energy-monitor-v2.0';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -8,18 +8,19 @@ const STATIC_ASSETS = [
   '/apple-touch-icon.png'
 ];
 
-// 1. Install event: Cache essential assets
+// 1. Install event: Pre-cache essential assets immediately
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_ASSETS).catch((err) => {
-        console.warn('[SW] Caching non-blocking warning:', err);
+        console.warn('[SW] Pre-caching non-blocking note:', err);
       });
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
-// 2. Activate event: Clear old caches
+// 2. Activate event: Clear old caches and take immediate control
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -32,23 +33,26 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// 3. Fetch event: Stale-while-revalidate for assets, Network-first for APIs
+// 3. Fetch event: Stale-While-Revalidate for app assets, bypass for ESP32/API calls
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Bypass caching for live API endpoints & ESP32 direct endpoints
+  // Bypass caching completely for real-time ESP32 & local backend APIs
   if (
     url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/ping') ||
     url.pathname.startsWith('/data') ||
     url.pathname.startsWith('/relais') ||
     url.pathname.startsWith('/auto') ||
-    url.pathname.startsWith('/calibrer')
+    url.pathname.startsWith('/calibrer') ||
+    url.pathname.startsWith('/settings') ||
+    url.pathname.startsWith('/update') ||
+    url.hostname === '192.168.4.1'
   ) {
-    return; // Normal network request
+    return;
   }
 
-  // Handle SPA navigation requests
+  // Handle SPA navigation requests offline
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request).catch(() => {
@@ -58,11 +62,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // For static assets, try cache first then network fallback
+  // Cache-First with Background Revalidation for static scripts & assets
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
-        // Fetch in background to update cache
+        // Asynchronously refresh in background if network is available
         fetch(event.request)
           .then((networkResponse) => {
             if (networkResponse && networkResponse.status === 200) {
@@ -76,20 +80,19 @@ self.addEventListener('fetch', (event) => {
 
       return fetch(event.request)
         .then((response) => {
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response;
+          if (response && response.status === 200) {
+            const responseToCache = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseToCache);
+            });
           }
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
           return response;
         })
         .catch(() => {
-          // Offline fallback
           if (event.request.destination === 'document') {
-            return caches.match('/index.html');
+            return caches.match('/index.html') || caches.match('/');
           }
+          return new Response('', { status: 408, statusText: 'Offline' });
         });
     })
   );

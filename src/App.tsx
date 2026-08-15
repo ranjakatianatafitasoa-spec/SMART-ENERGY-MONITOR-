@@ -253,28 +253,11 @@ export default function App() {
     dernierRelaisRef.current = newData.relais;
   }, [settings.soundAlerts, playAlertSound, showToast]);
 
-  // Data Fetching Loop supporting Direct ESP32 AP Mode & Server Proxy
+  // Data Fetching Loop supporting Direct ESP32 AP Mode & Server Proxy (Fully Offline-Capable)
   useEffect(() => {
     let isMounted = true;
 
     const interval = setInterval(async () => {
-      // Check browser network connectivity
-      if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        if (isMounted) {
-          setData((prev) => ({
-            ...prev,
-            wifiConnected: false,
-            esp32Connected: false,
-            tension: 0,
-            courant: 0,
-            puissance: 0,
-            niveau: 'ATTENTION',
-            message: 'Réseau Wi-Fi déconnecté — Veuillez vérifier la connexion',
-          }));
-        }
-        return;
-      }
-
       const curSettings = settingsRef.current;
       const targetIp = curSettings.connectionMode === 'custom' && curSettings.esp32Ip
         ? curSettings.esp32Ip.replace(/^http:\/\//, '')
@@ -286,7 +269,7 @@ export default function App() {
       if (curSettings.connectionMode !== 'server') {
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 1200);
+          const timeoutId = setTimeout(() => controller.abort(), 1400);
           const directRes = await fetch(`http://${targetIp}/data`, {
             signal: controller.signal,
             mode: 'cors',
@@ -327,7 +310,7 @@ export default function App() {
           updatedData.wifiConnected = true;
         }
 
-        // Automatic threshold protection evaluation on client
+        // Automatic threshold protection evaluation on client using the user's fixed settings
         if (!updatedData.manuel) {
           if (updatedData.tension === 0) {
             updatedData.niveau = 'DANGER';
@@ -359,22 +342,6 @@ export default function App() {
         }
 
         setData(updatedData);
-
-        if (fetched.settings) {
-          setSettings((prev) => {
-            const s = fetched.settings!;
-            if (
-              prev.minVoltage === s.minVoltage &&
-              prev.maxVoltage === s.maxVoltage &&
-              prev.minCurrent === s.minCurrent &&
-              prev.maxCurrent === s.maxCurrent &&
-              prev.soundAlerts === s.soundAlerts
-            ) {
-              return prev;
-            }
-            return { ...prev, ...s };
-          });
-        }
 
         setHistoryV((prev) => [...prev.slice(-59), updatedData.tension]);
         setHistoryI((prev) => [...prev.slice(-59), updatedData.courant]);

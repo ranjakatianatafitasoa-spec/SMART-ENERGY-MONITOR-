@@ -8,7 +8,6 @@ import {
   Activity,
   FileText,
   Settings,
-  Info,
   Shield,
 } from 'lucide-react';
 import { ActiveTab, ESP32Data } from '../types';
@@ -190,18 +189,6 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Settings className="w-3.5 h-3.5" />
           <span>PARAMÈTRES</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('about')}
-          className={`flex-1 px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-            activeTab === 'about'
-              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
-              : 'text-slate-400 hover:text-white hover:bg-white/5'
-          }`}
-        >
-          <Info className="w-3.5 h-3.5" />
-          <span>À PROPOS</span>
         </button>
       </div>
     </header>

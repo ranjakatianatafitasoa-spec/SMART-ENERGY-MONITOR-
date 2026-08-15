@@ -42,4 +42,4 @@ export interface ScaleOption {
   l: string;
 }
 
-export type ActiveTab = 'dashboard' | 'relais' | 'history' | 'reports' | 'settings' | 'about';
+export type ActiveTab = 'dashboard' | 'relais' | 'history' | 'reports' | 'settings';

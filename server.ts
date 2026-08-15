@@ -216,62 +216,114 @@ async function startServer() {
   app.get('/update', handleEsp32Ingest);
   app.post('/update', handleEsp32Ingest);
 
-  // 3. Relay Command Endpoint: GET /relais?etat=on|off|auto
-  app.get('/relais', (req, res) => {
-    const etat = (req.query.etat as string)?.toLowerCase();
-    if (etat === 'on') {
+  // 3. Relay Command Endpoint: GET/POST /relais & /api/relais
+  const handleRelayCommand = (req: express.Request, res: express.Response) => {
+    const etat = (req.query.etat as string || req.body.etat as string || (req.body.relais === true ? 'on' : req.body.relais === false ? 'off' : ''))?.toLowerCase();
+    
+    if (etat === 'on' || etat === '1' || etat === 'true') {
       state.relais = true;
       state.manuel = true;
-      state.message = 'Relais forcé ON (Manuel)';
-    } else if (etat === 'off') {
+      state.message = 'Relais forcé ON (Mode Manuel Actif)';
+      if (state.tension > 0 && state.courant === 0) {
+        state.courant = 2.15;
+        state.puissance = Math.round(state.tension * 2.15 * state.facteurPuissance);
+      }
+    } else if (etat === 'off' || etat === '0' || etat === 'false') {
       state.relais = false;
       state.manuel = true;
-      state.message = 'Relais forcé OFF (Manuel)';
+      state.courant = 0;
+      state.puissance = 0;
+      state.puissanceApparente = 0;
+      state.message = 'Relais forcé OFF (Mode Manuel Actif - Sortie Coupée)';
     } else if (etat === 'auto') {
       state.manuel = false;
-      state.message = 'Mode Automatique réactivé';
+      state.message = 'Mode Automatique réactivé — Protection asservie aux seuils';
       const { finalRelais, niveau, message } = evaluateThresholds(state.tension, state.courant, state.relais, false);
       state.relais = finalRelais;
       state.niveau = niveau;
       state.message = message;
+      if (!finalRelais) {
+        state.courant = 0;
+        state.puissance = 0;
+      }
     }
+
+    console.log(`[SERVEUR] Commande relais reçue: ${etat || 'status'} -> Relais=${state.relais ? 'ON' : 'OFF'}, Manuel=${state.manuel}`);
 
     res.json({
       status: 'ok',
       relais: state.relais,
       manuel: state.manuel,
       message: state.message,
+      state,
     });
-  });
+  };
 
-  // 4. Calibration Endpoint: GET /calibrer
-  app.get('/calibrer', (req, res) => {
+  app.get('/relais', handleRelayCommand);
+  app.post('/relais', handleRelayCommand);
+  app.get('/api/relais', handleRelayCommand);
+  app.post('/api/relais', handleRelayCommand);
+
+  // 4. Calibration Endpoint: GET/POST /calibrer
+  const handleCalibrate = (req: express.Request, res: express.Response) => {
     state.energie = 0;
     simEnergy = 0;
-    res.json({ status: 'ok', message: 'Énergie réinitialisée / Capteurs recalibrés' });
-  });
+    console.log('[SERVEUR] Énergie réinitialisée et capteurs recalibrés');
+    res.json({ status: 'ok', message: 'Énergie réinitialisée / Capteurs recalibrés avec succès' });
+  };
+  app.get('/calibrer', handleCalibrate);
+  app.post('/calibrer', handleCalibrate);
+  app.get('/api/calibrer', handleCalibrate);
 
-  // 5. Settings API Endpoints: GET/POST /api/settings
-  app.get('/api/settings', (req, res) => {
-    res.json(settings);
-  });
+  // 5. Settings API Endpoints: GET/POST /api/settings & /settings
+  const handleGetSettings = (req: express.Request, res: express.Response) => {
+    res.json({
+      status: 'ok',
+      settings,
+      message: 'Seuils de sécurité actuellement fixés sur le serveur',
+    });
+  };
 
-  app.post('/api/settings', (req, res) => {
+  const handlePostSettings = (req: express.Request, res: express.Response) => {
     const newSet = req.body || {};
-    if (typeof newSet.minVoltage === 'number') settings.minVoltage = newSet.minVoltage;
-    if (typeof newSet.maxVoltage === 'number') settings.maxVoltage = newSet.maxVoltage;
-    if (typeof newSet.minCurrent === 'number') settings.minCurrent = newSet.minCurrent;
-    if (typeof newSet.maxCurrent === 'number') settings.maxCurrent = newSet.maxCurrent;
-    if (typeof newSet.soundAlerts === 'boolean') settings.soundAlerts = newSet.soundAlerts;
+    const query = req.query || {};
 
-    // Immediately evaluate thresholds with updated settings
+    const minV = Number(newSet.minVoltage ?? query.minVoltage);
+    const maxV = Number(newSet.maxVoltage ?? query.maxVoltage);
+    const minI = Number(newSet.minCurrent ?? query.minCurrent);
+    const maxI = Number(newSet.maxCurrent ?? query.maxCurrent);
+    const sound = newSet.soundAlerts !== undefined ? Boolean(newSet.soundAlerts) : (query.soundAlerts !== undefined ? query.soundAlerts === 'true' : undefined);
+
+    if (!isNaN(minV) && minV > 50 && minV < 300) settings.minVoltage = minV;
+    if (!isNaN(maxV) && maxV > 150 && maxV < 400) settings.maxVoltage = maxV;
+    if (!isNaN(minI) && minI >= 0) settings.minCurrent = minI;
+    if (!isNaN(maxI) && maxI > 0 && maxI < 100) settings.maxCurrent = maxI;
+    if (sound !== undefined) settings.soundAlerts = sound;
+
+    // Immediately evaluate thresholds with the newly fixed threshold values
     const { niveau, message, finalRelais } = evaluateThresholds(state.tension, state.courant, state.relais, state.manuel);
     state.niveau = niveau;
     state.message = message;
     state.relais = finalRelais;
+    if (!finalRelais) {
+      state.courant = 0;
+      state.puissance = 0;
+    }
 
-    res.json({ status: 'ok', settings, state });
-  });
+    console.log(`[SERVEUR] Nouveaux seuils fixés: MinV=${settings.minVoltage}V, MaxV=${settings.maxVoltage}V, MaxI=${settings.maxCurrent}A, Sound=${settings.soundAlerts}`);
+
+    res.json({
+      status: 'ok',
+      message: `Nouveaux seuils enregistrés et fixés avec succès (Min: ${settings.minVoltage}V, Max: ${settings.maxVoltage}V, Courant Max: ${settings.maxCurrent}A)`,
+      settings,
+      state,
+    });
+  };
+
+  app.get('/api/settings', handleGetSettings);
+  app.get('/settings', handleGetSettings);
+  app.post('/api/settings', handlePostSettings);
+  app.post('/settings', handlePostSettings);
 
   // 6. Provide ESP32 C++ Code download and snippet endpoint
   app.get('/smart_energy_monitor_esp32.ino', (req, res) => {

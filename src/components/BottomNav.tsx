@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutGrid, Shield, Activity, FileText, Settings, Info } from 'lucide-react';
+import { LayoutGrid, Shield, Activity, FileText, Settings } from 'lucide-react';
 import { ActiveTab } from '../types';
 
 interface BottomNavProps {
@@ -14,12 +14,11 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
     { id: 'history', label: 'GRAPH', icon: <Activity className="w-4 h-4 sm:w-5 sm:h-5" /> },
     { id: 'reports', label: 'RAPPORTS', icon: <FileText className="w-4 h-4 sm:w-5 sm:h-5" /> },
     { id: 'settings', label: 'CONFIG', icon: <Settings className="w-4 h-4 sm:w-5 sm:h-5" /> },
-    { id: 'about', label: 'INFOS', icon: <Info className="w-4 h-4 sm:w-5 sm:h-5" /> },
   ];
 
   return (
     <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-50 pt-1.5 pb-[calc(0.4rem+env(safe-area-inset-bottom,0px))] px-1 bg-slate-950/95 backdrop-blur-md border-t border-slate-800/80 shadow-[0_-5px_25px_rgba(0,0,0,0.8)]">
-      <div className="max-w-md mx-auto grid grid-cols-6 gap-0.5 items-center">
+      <div className="max-w-md mx-auto grid grid-cols-5 gap-1 items-center">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
@@ -35,7 +34,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
               <div className={isActive ? 'scale-110 text-cyan-300 transition-transform' : ''}>
                 {tab.icon}
               </div>
-              <span className="text-[8.5px] font-mono tracking-tight uppercase mt-0.5 whitespace-nowrap">
+              <span className="text-[9px] font-mono tracking-tight uppercase mt-0.5 whitespace-nowrap">
                 {tab.label}
               </span>
             </button>
@@ -45,4 +44,5 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
     </nav>
   );
 };
+
 

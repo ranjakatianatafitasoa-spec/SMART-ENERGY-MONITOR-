@@ -8,10 +8,8 @@ import { LiveEvolutionCard } from './components/LiveEvolutionCard';
 import { RelayPage } from './components/RelayPage';
 import { SettingsTab, SystemSettings } from './components/SettingsTab';
 import { ReportsTab } from './components/ReportsTab';
-import { AboutTab } from './components/AboutTab';
 import { BottomNav } from './components/BottomNav';
 import { EnergyModal } from './components/EnergyModal';
-import { SimulationButton } from './components/SimulationButton';
 import { ActiveTab, ESP32Data, HistoryRecord } from './types';
 import {
   generateEnergyPdfHtml,
@@ -43,11 +41,6 @@ export default function App() {
     wifiConnected: false,
     esp32Connected: false,
   });
-
-  // Simulation state parameters matching hardware logic
-  const [simulationMode, setSimulationMode] = useState<'normal' | 'outage' | 'overvoltage' | 'overcurrent'>('normal');
-  const phaseRef = useRef<number>(0);
-  const energieSimRef = useRef<number>(1420.5);
 
   // Live history arrays for vector charts
   const [historyV, setHistoryV] = useState<number[]>([]);
@@ -97,19 +90,38 @@ export default function App() {
   const dernierNiveauRef = useRef<string | null>('NORMAL');
   const dernierRelaisRef = useRef<boolean | null>(true);
 
-  // Configurable System Settings & Thresholds
-  const [settings, setSettings] = useState<SystemSettings>({
-    minVoltage: 185,
-    maxVoltage: 253,
-    minCurrent: 0,
-    maxCurrent: 10,
-    soundAlerts: true,
+  // Configurable System Settings & Thresholds with persistent localStorage backing
+  const [settings, setSettings] = useState<SystemSettings>(() => {
+    try {
+      const saved = localStorage.getItem('smart_energy_settings');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch {}
+    return {
+      minVoltage: 185,
+      maxVoltage: 253,
+      minCurrent: 0,
+      maxCurrent: 10,
+      soundAlerts: true,
+      connectionMode: 'ap',
+      esp32Ip: '192.168.4.1',
+    };
   });
 
   const settingsRef = useRef<SystemSettings>(settings);
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  // Initial sync with backend server
+  useEffect(() => {
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settingsRef.current),
+    }).catch(() => {});
+  }, []);
 
   // Sound Alert Synthesizer
   const playAlertSound = useCallback((frequency = 880, duration = 0.25) => {
@@ -296,8 +308,7 @@ export default function App() {
       // 2. Fallback to Local Server Proxy if direct AP did not respond
       if (!fetched) {
         try {
-          const url = simulationMode !== 'normal' ? '/data?simulate=true' : '/data';
-          const proxyRes = await fetch(url);
+          const proxyRes = await fetch('/data');
           if (proxyRes.ok) {
             fetched = await proxyRes.json();
           }
@@ -314,24 +325,6 @@ export default function App() {
         // Ensure wifiConnected flag is set correctly
         if (updatedData.wifiConnected === undefined) {
           updatedData.wifiConnected = true;
-        }
-
-        // Simulation overlay if triggered from UI
-        if (simulationMode === 'outage') {
-          updatedData.tension = 0;
-          updatedData.courant = 0;
-          updatedData.puissance = 0;
-          updatedData.niveau = 'DANGER';
-          updatedData.message = 'Coupure secteur (0V) simulée';
-        } else if (simulationMode === 'overvoltage') {
-          updatedData.tension = 265.4;
-          updatedData.niveau = 'DANGER';
-          updatedData.message = 'Surtension secteur critique (265.4V > 253V)';
-        } else if (simulationMode === 'overcurrent') {
-          updatedData.courant = 5.50;
-          updatedData.puissance = Math.round(updatedData.tension * 5.5);
-          updatedData.niveau = 'ATTENTION';
-          updatedData.message = 'Surcharge courant élevée (5.50A)';
         }
 
         // Automatic threshold protection evaluation on client
@@ -407,48 +400,67 @@ export default function App() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [simulationMode, recordIfPertinent]);
+  }, [recordIfPertinent]);
 
   const handleUpdateSettings = (newSettings: SystemSettings) => {
     setSettings(newSettings);
     settingsRef.current = newSettings;
+    try {
+      localStorage.setItem('smart_energy_settings', JSON.stringify(newSettings));
+    } catch {}
 
     // Immediately evaluate protection with new threshold limits
     setData((prev) => {
       let nextData = { ...prev };
       if (!nextData.manuel) {
-        if (nextData.tension > newSettings.maxVoltage) {
+        if (nextData.tension === 0) {
+          nextData.niveau = 'DANGER';
+          nextData.message = 'Coupure secteur (0V) détectée';
+          nextData.relais = false;
+        } else if (nextData.tension > newSettings.maxVoltage) {
           nextData.niveau = 'DANGER';
           nextData.message = `Surtension secteur (${nextData.tension.toFixed(1)}V > ${newSettings.maxVoltage}V) — Relais déclenché`;
           nextData.relais = false;
-          nextData.courant = 0;
-          nextData.puissance = 0;
-        } else if (nextData.tension < newSettings.minVoltage && nextData.tension > 0) {
+        } else if (nextData.tension < newSettings.minVoltage) {
           nextData.niveau = 'ATTENTION';
           nextData.message = `Sous-tension secteur (${nextData.tension.toFixed(1)}V < ${newSettings.minVoltage}V) — Relais déclenché`;
           nextData.relais = false;
+        } else if (nextData.courant > newSettings.maxCurrent) {
+          nextData.niveau = 'ATTENTION';
+          nextData.message = `Surcharge courant (${nextData.courant.toFixed(2)}A > ${newSettings.maxCurrent}A) — Relais déclenché`;
+          nextData.relais = false;
+        } else {
+          nextData.niveau = 'NORMAL';
+          nextData.relais = true;
+          nextData.message = 'Système nominal (Protection active)';
+        }
+
+        if (!nextData.relais) {
           nextData.courant = 0;
           nextData.puissance = 0;
+          nextData.puissanceApparente = 0;
         }
       }
       return nextData;
     });
 
-    // Send to Local Server
+    // Send to Local Server (POST JSON)
     fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newSettings),
     }).catch(() => {});
 
-    // Send directly to ESP32 AP if configured
+    // Send directly to ESP32 WebServer (both POST JSON and GET fallback)
     const targetIp = newSettings.esp32Ip || '192.168.4.1';
     fetch(`http://${targetIp}/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newSettings),
       mode: 'cors',
-    }).catch(() => {});
+    }).catch(() => {
+      fetch(`http://${targetIp}/settings?minVoltage=${newSettings.minVoltage}&maxVoltage=${newSettings.maxVoltage}&maxCurrent=${newSettings.maxCurrent}`, { mode: 'cors' }).catch(() => {});
+    });
   };
 
   // Relay Actions (Direct Hardware & Local Server Broadcast)
@@ -550,7 +562,6 @@ export default function App() {
     if (resetEnergyToo) {
       setData((prev) => ({ ...prev, energie: 0 }));
       setHistoryE([]);
-      energieSimRef.current = 0;
       const targetIp = settingsRef.current.esp32Ip || '192.168.4.1';
       fetch(`http://${targetIp}/calibrer`, { mode: 'cors' }).catch(() => {});
       fetch('/calibrer').catch(() => {});
@@ -643,6 +654,7 @@ export default function App() {
       {activeTab === 'relais' && (
         <RelayPage
           data={data}
+          settings={settings}
           onToggleRelay={handleToggleRelay}
           onRepasserAuto={handleRepasserAuto}
           onRecalibrer={handleRecalibrer}
@@ -681,9 +693,6 @@ export default function App() {
         />
       )}
 
-      {/* PAGE 5: À PROPOS */}
-      {activeTab === 'about' && <AboutTab data={data} />}
-
       {/* Energy Modal */}
       <EnergyModal
         isOpen={isEnergyModalOpen}
@@ -691,17 +700,6 @@ export default function App() {
         energieWh={data.energie}
         historyE={historyE}
         onDownloadPdf={handleDownloadEnergyPdf}
-      />
-
-      {/* Simulation Button / Fault Injector Menu */}
-      <SimulationButton
-        isOutage={simulationMode === 'outage'}
-        onToggleOutage={() =>
-          setSimulationMode((prev) => (prev === 'outage' ? 'normal' : 'outage'))
-        }
-        onSimulateOvervoltage={() => setSimulationMode('overvoltage')}
-        onSimulateOvercurrent={() => setSimulationMode('overcurrent')}
-        onResetNormal={() => setSimulationMode('normal')}
       />
 
       {/* Sticky Bottom Navigation Bar (Matches mobile mockup) */}

@@ -11,7 +11,6 @@ import { ReportsTab } from './components/ReportsTab';
 import { AboutTab } from './components/AboutTab';
 import { BottomNav } from './components/BottomNav';
 import { EnergyModal } from './components/EnergyModal';
-import { Toast } from './components/Toast';
 import { SimulationButton } from './components/SimulationButton';
 import { ActiveTab, ESP32Data, HistoryRecord } from './types';
 import {
@@ -19,7 +18,7 @@ import {
   generateFullReportPdfHtml,
   exportOrPrintPdf,
 } from './utils/pdfUtils';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, AlertOctagon, Info, X } from 'lucide-react';
 
 const INTERVALLE_RELEVE_MS = 60000; // 1 minute snapshot for PDF history
 
@@ -567,16 +566,53 @@ export default function App() {
         setActiveTab={handleSelectTab}
       />
 
-      {/* Notification Banner positioned directly below the Header */}
+      {/* Single integrated notification banner positioned neatly below the Header */}
       {toastMessage && (
-        <div className="mb-2 px-3 py-1.5 rounded-xl bg-slate-950/95 border border-cyan-400/80 text-cyan-200 text-xs font-mono font-bold flex items-center justify-between gap-3 shadow-[0_0_20px_rgba(0,242,254,0.35)] backdrop-blur-md animate-fadeIn">
+        <div
+          className={`mb-2.5 px-3 py-1.5 rounded-xl border text-xs font-mono font-bold flex items-center justify-between gap-3 backdrop-blur-md animate-fadeIn transition-all ${
+            toastType === 'danger'
+              ? 'bg-rose-950/90 border-rose-500/80 text-rose-200 shadow-[0_0_15px_rgba(244,63,94,0.3)]'
+              : toastType === 'warning'
+              ? 'bg-amber-950/90 border-amber-500/80 text-amber-200 shadow-[0_0_15px_rgba(245,158,11,0.3)]'
+              : toastType === 'success'
+              ? 'bg-emerald-950/90 border-emerald-500/80 text-emerald-200 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
+              : 'bg-slate-950/95 border-cyan-400/80 text-cyan-200 shadow-[0_0_15px_rgba(6,182,212,0.3)]'
+          }`}
+        >
           <div className="flex items-center gap-2 min-w-0">
-            <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400 shrink-0 animate-pulse" />
+            {toastType === 'danger' ? (
+              <AlertOctagon className="w-3.5 h-3.5 text-rose-400 shrink-0 animate-pulse" />
+            ) : toastType === 'warning' ? (
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
+            ) : toastType === 'success' ? (
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 animate-pulse" />
+            ) : (
+              <Info className="w-3.5 h-3.5 text-cyan-400 shrink-0 animate-pulse" />
+            )}
             <span className="tracking-wide uppercase truncate">{toastMessage}</span>
           </div>
-          <span className="text-[10px] text-cyan-400/90 border border-cyan-500/40 bg-cyan-500/10 px-2 py-0.5 rounded-full uppercase shrink-0 font-bold">
-            SYNCHRONISÉ
-          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <span
+              className={`text-[9.5px] px-2 py-0.5 rounded-full uppercase font-bold border ${
+                toastType === 'danger'
+                  ? 'text-rose-300 border-rose-500/40 bg-rose-500/10'
+                  : toastType === 'warning'
+                  ? 'text-amber-300 border-amber-500/40 bg-amber-500/10'
+                  : toastType === 'success'
+                  ? 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10'
+                  : 'text-cyan-300 border-cyan-500/40 bg-cyan-500/10'
+              }`}
+            >
+              SYNCHRONISÉ
+            </span>
+            <button
+              onClick={() => setToastMessage(null)}
+              className="p-0.5 rounded-md hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              title="Fermer la notification"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -656,9 +692,6 @@ export default function App() {
         historyE={historyE}
         onDownloadPdf={handleDownloadEnergyPdf}
       />
-
-      {/* Toast Popup */}
-      <Toast message={toastMessage} />
 
       {/* Simulation Button / Fault Injector Menu */}
       <SimulationButton

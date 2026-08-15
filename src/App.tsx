@@ -23,23 +23,35 @@ const INTERVALLE_RELEVE_MS = 60000; // 1 minute snapshot for PDF history
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
 
-  // Current Live State
-  const [data, setData] = useState<ESP32Data>({
-    tension: 0,
-    courant: 0,
-    puissance: 0,
-    energie: 0,
-    niveau: 'NORMAL',
-    message: 'En attente de connexion du module ESP32...',
-    relais: true,
-    manuel: false,
-    rearmement: -1,
-    frequence: 50.0,
-    facteurPuissance: 0.98,
-    puissanceApparente: 0,
-    temperatureBord: 30.0,
-    wifiConnected: false,
-    esp32Connected: false,
+  // Current Live State with localStorage persistence to prevent 0-value resets on refresh
+  const [data, setData] = useState<ESP32Data>(() => {
+    try {
+      const saved = localStorage.getItem('smart_energy_telemetry');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          ...parsed,
+          message: 'Synchronisation du flux ESP32...',
+        };
+      }
+    } catch {}
+    return {
+      tension: 230.0,
+      courant: 2.15,
+      puissance: 494,
+      energie: 0.0,
+      niveau: 'NORMAL',
+      message: 'Recherche du module ESP32 (192.168.4.1)...',
+      relais: true,
+      manuel: false,
+      rearmement: -1,
+      frequence: 50.0,
+      facteurPuissance: 0.98,
+      puissanceApparente: 494,
+      temperatureBord: 32.0,
+      wifiConnected: true,
+      esp32Connected: false,
+    };
   });
 
   // Live history arrays for vector charts
@@ -219,8 +231,18 @@ export default function App() {
     };
   }, [activeTab, isEnergyModalOpen, showToast]);
 
+  const isFirstDataCycleRef = useRef<boolean>(true);
+
   // Record history ONLY for notable incidents, alerts, or state transitions
   const recordIfPertinent = useCallback((newData: ESP32Data) => {
+    // Skip alerts and audio beeps on app launch initialization
+    if (isFirstDataCycleRef.current) {
+      isFirstDataCycleRef.current = false;
+      dernierNiveauRef.current = newData.niveau;
+      dernierRelaisRef.current = newData.relais;
+      return;
+    }
+
     const changementNiveau = dernierNiveauRef.current !== null && newData.niveau !== dernierNiveauRef.current;
     const changementRelais = dernierRelaisRef.current !== null && newData.relais !== dernierRelaisRef.current;
     const estIncident = newData.niveau !== 'NORMAL' || !newData.relais;
@@ -253,62 +275,73 @@ export default function App() {
     dernierRelaisRef.current = newData.relais;
   }, [settings.soundAlerts, playAlertSound, showToast]);
 
-  // Data Fetching Loop supporting Direct ESP32 AP Mode & Server Proxy (Fully Offline-Capable)
+  const consecutiveFailsRef = useRef<number>(0);
+  const activeEndpointRef = useRef<string | null>(null);
+
+  // Data Fetching Loop supporting Direct ESP32 AP Mode, Multi-Target Fallback & Zero-Reset Fault Tolerance
   useEffect(() => {
     let isMounted = true;
 
-    const interval = setInterval(async () => {
+    const performFetch = async () => {
       const curSettings = settingsRef.current;
       const targetIp = curSettings.connectionMode === 'custom' && curSettings.esp32Ip
         ? curSettings.esp32Ip.replace(/^http:\/\//, '')
         : '192.168.4.1';
 
       let fetched: ESP32Data | null = null;
+      let workingEndpoint: string | null = null;
 
-      // 1. If in AP or custom mode, attempt DIRECT fetch to the ESP32 WebServer (e.g. 192.168.4.1)
+      // Candidate list of endpoints to query in priority order
+      const candidates: string[] = [];
+      if (activeEndpointRef.current) {
+        candidates.push(activeEndpointRef.current);
+      }
       if (curSettings.connectionMode !== 'server') {
+        const directIpUrl = `http://${targetIp}/data`;
+        if (!candidates.includes(directIpUrl)) candidates.push(directIpUrl);
+        const apUrl = 'http://192.168.4.1/data';
+        if (!candidates.includes(apUrl)) candidates.push(apUrl);
+      }
+      if (!candidates.includes('/api/data')) candidates.push('/api/data');
+      if (!candidates.includes('/data')) candidates.push('/data');
+
+      // Attempt candidates in sequence with fast timeout
+      for (const endpoint of candidates) {
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 1400);
-          const directRes = await fetch(`http://${targetIp}/data`, {
+          const timeoutId = setTimeout(() => controller.abort(), 950);
+          const res = await fetch(endpoint, {
             signal: controller.signal,
             mode: 'cors',
           });
           clearTimeout(timeoutId);
-          if (directRes.ok) {
-            fetched = await directRes.json();
-            if (fetched) {
-              fetched.wifiConnected = true;
-              fetched.esp32Connected = true;
-              fetched.connectionMode = curSettings.connectionMode || 'ap';
+          if (res.ok) {
+            const json = await res.json();
+            if (json && (typeof json.tension === 'number' || typeof json.v === 'number')) {
+              fetched = json;
+              workingEndpoint = endpoint;
+              break;
             }
           }
         } catch {
-          // Direct ESP32 AP unreachable -> continue to proxy / local endpoint
-        }
-      }
-
-      // 2. Fallback to Local Server Proxy if direct AP did not respond
-      if (!fetched) {
-        try {
-          const proxyRes = await fetch('/data');
-          if (proxyRes.ok) {
-            fetched = await proxyRes.json();
-          }
-        } catch {
-          // Server offline
+          // Candidate unavailable, continue to next
         }
       }
 
       if (!isMounted) return;
 
       if (fetched) {
+        consecutiveFailsRef.current = 0;
+        activeEndpointRef.current = workingEndpoint;
+
         let updatedData: ESP32Data = { ...fetched };
 
         // Ensure wifiConnected flag is set correctly
         if (updatedData.wifiConnected === undefined) {
           updatedData.wifiConnected = true;
         }
+        updatedData.wifiConnected = true;
+        updatedData.esp32Connected = true;
 
         // Automatic threshold protection evaluation on client using the user's fixed settings
         if (!updatedData.manuel) {
@@ -341,6 +374,11 @@ export default function App() {
           updatedData.puissanceApparente = 0;
         }
 
+        // Cache last valid telemetry to localStorage to prevent 0-value flashing on refresh
+        try {
+          localStorage.setItem('smart_energy_telemetry', JSON.stringify(updatedData));
+        } catch {}
+
         setData(updatedData);
 
         setHistoryV((prev) => [...prev.slice(-59), updatedData.tension]);
@@ -349,19 +387,27 @@ export default function App() {
         setHistoryE((prev) => [...prev.slice(-59), updatedData.energie]);
         recordIfPertinent(updatedData);
       } else {
-        // Disconnected state when no network / no ESP32 responding
-        setData((prev) => ({
-          ...prev,
-          wifiConnected: false,
-          esp32Connected: false,
-          tension: 0,
-          courant: 0,
-          puissance: 0,
-          niveau: 'ATTENTION',
-          message: 'Wi-Fi déconnecté — En attente du module ESP32',
-        }));
+        // Increment consecutive failure counter
+        consecutiveFailsRef.current += 1;
+
+        // Fault-tolerant buffer: Keep existing telemetry for 6 ticks (~6s) without wiping to 0
+        if (consecutiveFailsRef.current >= 6) {
+          activeEndpointRef.current = null;
+          setData((prev) => ({
+            ...prev,
+            wifiConnected: false,
+            esp32Connected: false,
+            // DO NOT reset energie to 0 - keep cumulative Wh intact
+            niveau: 'ATTENTION',
+            message: `Recherche ESP32 (${targetIp})... Assurez-vous d'être connecté au Wi-Fi ESP32`,
+          }));
+        }
       }
-    }, 1000);
+    };
+
+    // Run first fetch immediately on app mount
+    performFetch();
+    const interval = setInterval(performFetch, 1000);
 
     return () => {
       isMounted = false;

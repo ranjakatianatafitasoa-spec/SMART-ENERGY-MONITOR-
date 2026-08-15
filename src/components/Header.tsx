@@ -87,8 +87,8 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* High-Contrast Cyber Display Title */}
-          <div className="text-left">
-            <h1 className="text-lg sm:text-2xl md:text-2.5xl lg:text-3xl font-black tracking-tight uppercase text-white font-sans flex items-center gap-1.5 sm:gap-2 leading-none whitespace-nowrap">
+          <div className="text-left min-w-0">
+            <h1 className="text-base xs:text-lg sm:text-2xl md:text-2.5xl lg:text-3xl font-black tracking-tight uppercase text-white font-sans flex items-center gap-1.5 sm:gap-2 leading-none whitespace-nowrap">
               <span className="tracking-wide">SMART ENERGY</span>
               <span className="text-cyan-400 drop-shadow-[0_0_16px_rgba(34,211,238,0.9)] font-black">
                 MONITOR
@@ -101,28 +101,28 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center justify-center gap-1.5 sm:gap-2 font-mono text-[10px] sm:text-xs z-10 shrink flex-wrap sm:flex-nowrap max-w-full">
           
           {/* 1. Date Pill */}
-          <div className="h-6.5 sm:h-7.5 flex items-center gap-1 sm:gap-1.5 text-cyan-300 bg-slate-900/90 px-1.5 sm:px-2.5 rounded-lg border border-cyan-500/30 shadow-[0_0_6px_rgba(6,182,212,0.12)] backdrop-blur-md shrink-0">
+          <div className="h-6 sm:h-7.5 flex items-center gap-1 sm:gap-1.5 text-cyan-300 bg-slate-900/90 px-2 sm:px-2.5 rounded-lg border border-cyan-500/30 shadow-[0_0_6px_rgba(6,182,212,0.12)] backdrop-blur-md shrink-0">
             <Calendar className="w-3 h-3 text-cyan-400 shrink-0" />
-            <span className="font-semibold text-[9.5px] sm:text-[11px] tracking-tight uppercase whitespace-nowrap">{dateStr}</span>
+            <span className="font-semibold text-[9px] xs:text-[10px] sm:text-[11px] tracking-tight uppercase whitespace-nowrap">{dateStr}</span>
           </div>
 
           {/* 2. Heure Pill */}
-          <div className="h-6.5 sm:h-7.5 flex items-center gap-1 sm:gap-1.5 text-white bg-slate-900/90 px-1.5 sm:px-2.5 rounded-lg border border-cyan-500/30 shadow-[0_0_6px_rgba(6,182,212,0.12)] backdrop-blur-md shrink-0">
+          <div className="h-6 sm:h-7.5 flex items-center gap-1 sm:gap-1.5 text-white bg-slate-900/90 px-2 sm:px-2.5 rounded-lg border border-cyan-500/30 shadow-[0_0_6px_rgba(6,182,212,0.12)] backdrop-blur-md shrink-0">
             <Clock className="w-3 h-3 text-cyan-400 shrink-0" />
-            <span className="font-bold text-[9.5px] sm:text-[11px] tracking-tight text-cyan-200 whitespace-nowrap">{timeStr}</span>
+            <span className="font-bold text-[9px] xs:text-[10px] sm:text-[11px] tracking-tight text-cyan-200 whitespace-nowrap">{timeStr}</span>
           </div>
 
           {/* 3. WiFi Status Pill */}
           <button
             onClick={() => setActiveTab('settings')}
             title="Cliquez pour configurer la liaison Wi-Fi / ESP32"
-            className={`h-6.5 sm:h-7.5 flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 rounded-lg border backdrop-blur-md transition-all shrink-0 cursor-pointer ${
+            className={`h-6 sm:h-7.5 flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 rounded-lg border backdrop-blur-md transition-all shrink-0 cursor-pointer ${
             data.wifiConnected === true
               ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/40 text-emerald-300 shadow-[0_0_6px_rgba(16,185,129,0.2)]'
               : 'bg-rose-500/15 hover:bg-rose-500/25 border-rose-500/40 text-rose-300 shadow-[0_0_6px_rgba(244,63,94,0.25)]'
           }`}>
             <Wifi className={`w-3 h-3 shrink-0 ${data.wifiConnected === true ? 'animate-pulse text-emerald-400' : 'text-rose-400'}`} />
-            <span className="text-[9.5px] sm:text-[11px] font-bold tracking-tight whitespace-nowrap">
+            <span className="text-[9px] xs:text-[10px] sm:text-[11px] font-bold tracking-tight whitespace-nowrap">
               {data.wifiConnected === true ? 'WIFI CONNECTÉ' : 'WIFI DÉCONNECTÉ'}
             </span>
             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${data.wifiConnected === true ? 'bg-emerald-400 shadow-[0_0_5px_#10b981]' : 'bg-rose-500 shadow-[0_0_5px_#f43f5e] animate-ping'}`} />

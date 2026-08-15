@@ -558,7 +558,7 @@ export default function App() {
   };
 
   return (
-    <div className="max-w-[1300px] mx-auto p-2 sm:p-3.5 pb-20 sm:pb-4 min-h-screen flex flex-col justify-start">
+    <div className="max-w-[1300px] mx-auto p-2 sm:p-3.5 pb-[calc(5.2rem+env(safe-area-inset-bottom,0px))] sm:pb-6 min-h-screen flex flex-col justify-start">
       {/* Header displayed on all pages */}
       <Header
         data={data}

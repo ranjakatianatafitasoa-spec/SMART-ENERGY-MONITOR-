@@ -20,14 +20,23 @@ export const ScopeCanvas: React.FC<ScopeCanvasProps> = ({ voltage, current }) =>
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.max(1, rect.width * dpr);
-      canvas.height = Math.max(1, rect.height * dpr);
+      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
 
     resize();
     window.addEventListener('resize', resize);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && canvas.parentElement) {
+      resizeObserver = new ResizeObserver(() => {
+        resize();
+      });
+      resizeObserver.observe(canvas.parentElement);
+    }
 
     const draw = () => {
       const rect = canvas.getBoundingClientRect();
@@ -132,6 +141,9 @@ export const ScopeCanvas: React.FC<ScopeCanvasProps> = ({ voltage, current }) =>
 
     return () => {
       window.removeEventListener('resize', resize);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       cancelAnimationFrame(animationFrameId);
     };
   }, [voltage, current]);

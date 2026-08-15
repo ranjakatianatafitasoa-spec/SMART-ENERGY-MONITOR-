@@ -19,10 +19,10 @@ export const SimulationButton: React.FC<SimulationButtonProps> = ({
   const [isOpen, setIsOpen] = useState<boolean>(false);
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2">
+    <div className="fixed bottom-[calc(4.8rem+env(safe-area-inset-bottom,0px))] sm:bottom-4 right-2.5 sm:right-4 z-40 flex flex-col items-end gap-2">
       {/* Expanded Fault Test Suite */}
       {isOpen && (
-        <div className="glass-panel p-3 rounded-2xl border border-white/10 shadow-2xl flex flex-col gap-2 min-w-[220px] animate-fadeIn">
+        <div className="glass-panel p-3 rounded-2xl border border-white/10 shadow-2xl flex flex-col gap-2 min-w-[210px] sm:min-w-[230px] max-w-[90vw] animate-fadeIn bg-slate-950/95 backdrop-blur-xl">
           <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 pb-1 border-b border-white/5">
             TESTS D'INJECTION DE PANNE
           </div>
@@ -79,11 +79,12 @@ export const SimulationButton: React.FC<SimulationButtonProps> = ({
       {/* Main Trigger Toggle */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="px-4 py-2.5 rounded-2xl glass-panel border border-violet-500/40 bg-slate-900/90 text-white font-mono text-xs font-bold flex items-center gap-2 shadow-[0_0_20px_rgba(139,92,246,0.3)] hover:scale-105 active:scale-95 transition-all cursor-pointer"
+        className="px-3 py-2 sm:px-4 sm:py-2.5 rounded-2xl glass-panel border border-violet-500/40 bg-slate-900/90 text-white font-mono text-xs font-bold flex items-center gap-1.5 sm:gap-2 shadow-[0_0_20px_rgba(139,92,246,0.3)] hover:scale-105 active:scale-95 transition-all cursor-pointer"
       >
-        <Zap className="w-4 h-4 text-violet-400" />
-        <span>SIMULATEUR DE PANNE</span>
-        {isOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronUp className="w-3.5 h-3.5 text-slate-400" />}
+        <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-violet-400" />
+        <span className="hidden xs:inline">SIMULATEUR DE PANNE</span>
+        <span className="xs:hidden">SIMULATEUR</span>
+        {isOpen ? <ChevronDown className="w-3 h-3 text-slate-400" /> : <ChevronUp className="w-3 h-3 text-slate-400" />}
       </button>
     </div>
   );

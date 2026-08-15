@@ -34,10 +34,10 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ data, onOpenEnergyModa
         </div>
 
         <div className="my-auto py-2 flex items-baseline justify-center gap-1.5 font-mono">
-          <span className="text-3xl sm:text-4xl lg:text-5xl font-black text-cyan-300 tracking-tight drop-shadow-[0_0_12px_rgba(0,242,254,0.4)]">
+          <span className="text-2xl xs:text-3xl sm:text-4xl lg:text-5xl font-black text-cyan-300 tracking-tight drop-shadow-[0_0_12px_rgba(0,242,254,0.4)]">
             {tensionStr}
           </span>
-          <span className="text-sm sm:text-base font-bold text-slate-400">V</span>
+          <span className="text-xs xs:text-sm sm:text-base font-bold text-slate-400">V</span>
         </div>
 
         {/* Clean Progress Bar without extra small text labels */}
@@ -63,10 +63,10 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ data, onOpenEnergyModa
         </div>
 
         <div className="my-auto py-2 flex items-baseline justify-center gap-1.5 font-mono">
-          <span className="text-3xl sm:text-4xl lg:text-5xl font-black text-amber-300 tracking-tight drop-shadow-[0_0_12px_rgba(245,158,11,0.4)]">
+          <span className="text-2xl xs:text-3xl sm:text-4xl lg:text-5xl font-black text-amber-300 tracking-tight drop-shadow-[0_0_12px_rgba(245,158,11,0.4)]">
             {courantStr}
           </span>
-          <span className="text-sm sm:text-base font-bold text-slate-400">A</span>
+          <span className="text-xs xs:text-sm sm:text-base font-bold text-slate-400">A</span>
         </div>
 
         {/* Clean Progress Bar without extra small text labels */}
@@ -92,10 +92,10 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ data, onOpenEnergyModa
         </div>
 
         <div className="my-auto py-2 flex items-baseline justify-center gap-1.5 font-mono">
-          <span className="text-3xl sm:text-4xl lg:text-5xl font-black text-violet-300 tracking-tight drop-shadow-[0_0_12px_rgba(139,92,246,0.4)]">
+          <span className="text-2xl xs:text-3xl sm:text-4xl lg:text-5xl font-black text-violet-300 tracking-tight drop-shadow-[0_0_12px_rgba(139,92,246,0.4)]">
             {puissanceStr}
           </span>
-          <span className="text-sm sm:text-base font-bold text-slate-400">W</span>
+          <span className="text-xs xs:text-sm sm:text-base font-bold text-slate-400">W</span>
         </div>
 
         {/* Clean Progress Bar without extra small text labels */}
@@ -129,10 +129,10 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ data, onOpenEnergyModa
         </div>
 
         <div className="my-auto py-2 flex items-baseline justify-center gap-1.5 font-mono">
-          <span className="text-3xl sm:text-4xl lg:text-5xl font-black text-emerald-300 tracking-tight drop-shadow-[0_0_12px_rgba(16,185,129,0.4)]">
+          <span className="text-2xl xs:text-3xl sm:text-4xl lg:text-5xl font-black text-emerald-300 tracking-tight drop-shadow-[0_0_12px_rgba(16,185,129,0.4)]">
             {energieKWh}
           </span>
-          <span className="text-sm sm:text-base font-bold text-slate-400">kWh</span>
+          <span className="text-xs xs:text-sm sm:text-base font-bold text-slate-400">kWh</span>
         </div>
 
         {/* Clean Progress Bar without extra small text labels */}

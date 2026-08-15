@@ -1,4 +1,4 @@
-const CACHE_NAME = 'smart-energy-monitor-v2.0';
+const CACHE_NAME = 'smart-energy-monitor-v2.1';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -33,7 +33,41 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// 3. Fetch event: Stale-While-Revalidate for app assets, bypass for ESP32/API calls
+// 3. Background Notifications and Messages from Client
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
+    const { title, body, tag, icon, vibrate } = event.data;
+    self.registration.showNotification(title || 'Smart Énergie Alerte', {
+      body: body || 'Incident électrique détecté',
+      tag: tag || 'incident-alert',
+      icon: icon || '/icon-192.png',
+      badge: '/favicon.svg',
+      vibrate: vibrate || [300, 100, 300, 100, 300],
+      renotify: true,
+      requireInteraction: true,
+      data: { url: '/' },
+    });
+  }
+});
+
+// 4. Notification Click Handler - Focus or Open Window
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow('/');
+      }
+    })
+  );
+});
+
+// 5. Fetch event: Stale-While-Revalidate for app assets, bypass for ESP32/API calls
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 

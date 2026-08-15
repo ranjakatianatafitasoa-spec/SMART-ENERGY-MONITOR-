@@ -269,11 +269,60 @@ export default function App() {
       if (settings.soundAlerts && estIncident) {
         playAlertSound(1046, 0.3);
       }
+
+      // Native system notification when in background or when incident triggers
+      if (estIncident && typeof window !== 'undefined' && 'Notification' in window) {
+        if (Notification.permission === 'granted') {
+          try {
+            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+              navigator.serviceWorker.controller.postMessage({
+                type: 'SHOW_NOTIFICATION',
+                title: newData.tension === 0 ? '⚠️ COUPURE SECTEUR (0V)' : `⚡ ALERTE ÉLECTRIQUE (${newData.niveau})`,
+                body: newData.message || `Tension: ${newData.tension.toFixed(1)}V, Courant: ${newData.courant.toFixed(2)}A`,
+                tag: 'incident-alert',
+              });
+            } else {
+              new Notification(newData.tension === 0 ? '⚠️ COUPURE SECTEUR' : '⚡ ALERTE ÉLECTRIQUE', {
+                body: newData.message || `${newData.tension.toFixed(1)}V - ${newData.courant.toFixed(2)}A`,
+                icon: '/icon-192.png',
+              });
+            }
+          } catch {}
+        }
+      }
     }
 
     dernierNiveauRef.current = newData.niveau;
     dernierRelaisRef.current = newData.relais;
   }, [settings.soundAlerts, playAlertSound, showToast]);
+
+  // Screen WakeLock to maintain Wi-Fi active telemetry without Android sleeping
+  useEffect(() => {
+    let wakeLock: any = null;
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await (navigator as any).wakeLock.request('screen');
+        }
+      } catch {}
+    };
+
+    requestWakeLock();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        requestWakeLock();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (wakeLock && typeof wakeLock.release === 'function') {
+        wakeLock.release().catch(() => {});
+      }
+    };
+  }, []);
 
   const consecutiveFailsRef = useRef<number>(0);
   const activeEndpointRef = useRef<string | null>(null);
@@ -421,6 +470,13 @@ export default function App() {
     try {
       localStorage.setItem('smart_energy_settings', JSON.stringify(newSettings));
     } catch {}
+
+    // Request system notification permission on user action if enabled
+    if (newSettings.soundAlerts && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      try {
+        Notification.requestPermission().catch(() => {});
+      } catch {}
+    }
 
     // Immediately evaluate protection with new threshold limits
     setData((prev) => {

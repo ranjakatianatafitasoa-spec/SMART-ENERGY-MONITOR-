@@ -33,7 +33,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
   // Ping test state
   const [testingPing, setTestingPing] = useState<boolean>(false);
-  const [scanningNetwork, setScanningNetwork] = useState<boolean>(false);
   const [pingResult, setPingResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
@@ -105,9 +104,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       if (res.ok) {
         setPingResult({
           ok: true,
-          message: `ESP32 connecté (${elapsed} ms)`,
+          message: `Connecté (${elapsed} ms)`,
         });
-        showToast(`Liaison ESP32 validée (${elapsed}ms)`, 'success');
+        showToast(`ESP32 accessible (${elapsed}ms)`, 'success');
       } else {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -119,9 +118,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           const d = await res2.json();
           setPingResult({
             ok: true,
-            message: d.esp32Connected ? 'ESP32 actif via Serveur' : 'Serveur local opérationnel',
+            message: d.esp32Connected ? 'ESP32 connecté au serveur' : 'Serveur local actif',
           });
-          showToast(d.esp32Connected ? 'ESP32 détecté' : 'Serveur local opérationnel', 'success');
+          showToast(d.esp32Connected ? 'ESP32 connecté' : 'Serveur actif', 'success');
           return;
         }
       } catch {
@@ -135,50 +134,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       showToast('Module ESP32 non joignable. Vérifiez le Wi-Fi.', 'danger');
     } finally {
       setTestingPing(false);
-    }
-  };
-
-  const handleAutoScanNetwork = async () => {
-    setScanningNetwork(true);
-    showToast('Scan automatique des adresses ESP32 en cours...', 'info');
-
-    const scanList = [
-      '192.168.4.1',
-      '192.168.43.1',
-      '192.168.1.50',
-      '192.168.1.100',
-      '192.168.0.50',
-      '192.168.1.1',
-    ];
-
-    let foundIp: string | null = null;
-
-    for (const ip of scanList) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 800);
-        const res = await fetch(`http://${ip}/data`, { signal: controller.signal, mode: 'cors' });
-        clearTimeout(timeoutId);
-        if (res.ok) {
-          foundIp = ip;
-          break;
-        }
-      } catch {}
-    }
-
-    setScanningNetwork(false);
-
-    if (foundIp) {
-      setEsp32Ip(foundIp);
-      if (foundIp === '192.168.4.1') {
-        setConnectionMode('ap');
-      } else {
-        setConnectionMode('custom');
-      }
-      setPingResult({ ok: true, message: `Trouvé: ${foundIp}` });
-      showToast(`ESP32 détecté avec succès à l'adresse ${foundIp} !`, 'success');
-    } else {
-      showToast('Aucun ESP32 répondu sur le scan rapide. Vérifiez votre Wi-Fi.', 'warning');
     }
   };
 
@@ -224,20 +179,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               LIAISON WI-FI & ESP32
             </h2>
           </div>
-          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-            <button
-              onClick={handleAutoScanNetwork}
-              disabled={scanningNetwork || testingPing}
-              className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-300 border border-cyan-500/40 text-[11px] sm:text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all active:scale-95 shadow-sm"
-              title="Scanner automatiquement le réseau pour trouver l'adresse IP de l'ESP32"
-            >
-              <Radio className={`w-3.5 h-3.5 ${scanningNetwork ? 'animate-pulse text-cyan-300' : ''}`} />
-              <span>{scanningNetwork ? 'Scan...' : 'Auto-Scan IP'}</span>
-            </button>
+          <div className="flex items-center gap-2">
             <button
               onClick={handleTestConnection}
-              disabled={testingPing || scanningNetwork}
-              className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] sm:text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all active:scale-95"
+              disabled={testingPing}
+              className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 text-[11px] sm:text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all active:scale-95"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${testingPing ? 'animate-spin' : ''}`} />
               <span>{testingPing ? 'Test...' : 'Tester'}</span>
@@ -300,19 +246,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               />
             )}
           </div>
-        </div>
-
-        {/* Guide Connexion Android APK */}
-        <div className="p-3 sm:p-3.5 rounded-xl bg-slate-900/80 border border-cyan-500/20 text-xs space-y-2 text-slate-300">
-          <div className="flex items-center gap-2 text-cyan-300 font-bold text-[11px] sm:text-xs">
-            <Wifi className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-            <span>Guide de connexion Wi-Fi & ESP32 pour l'application :</span>
-          </div>
-          <ol className="list-decimal list-inside space-y-1 text-[11px] sm:text-xs text-slate-300 leading-relaxed pl-1">
-            <li>Connectez votre téléphone au réseau Wi-Fi émis par l'ESP32 (<code className="text-cyan-300 font-mono">ESP32_Energy_Monitor</code>).</li>
-            <li>Si Android indique <span className="text-amber-300 font-medium">« Ce réseau n'a pas accès à Internet »</span>, appuyez sur la notification et choisissez <strong className="text-emerald-400">« Conserver la connexion »</strong>.</li>
-            <li>Si les données ne remontent pas, désactivez momentanément vos Données Mobiles (4G/5G) pour forcer Android à interroger le réseau local de l'ESP32.</li>
-          </ol>
         </div>
       </div>
 

@@ -23,33 +23,33 @@ const INTERVALLE_RELEVE_MS = 60000; // 1 minute snapshot for PDF history
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
 
-  // Current Live State with localStorage persistence to prevent 0-value resets on refresh
+  // Current Live State with localStorage energy persistence
   const [data, setData] = useState<ESP32Data>(() => {
+    let savedEnergie = 0.0;
     try {
       const saved = localStorage.getItem('smart_energy_telemetry');
       if (saved) {
         const parsed = JSON.parse(saved);
-        return {
-          ...parsed,
-          message: 'Synchronisation du flux ESP32...',
-        };
+        if (typeof parsed.energie === 'number') {
+          savedEnergie = parsed.energie;
+        }
       }
     } catch {}
     return {
-      tension: 230.0,
-      courant: 2.15,
-      puissance: 494,
-      energie: 0.0,
-      niveau: 'NORMAL',
-      message: 'Recherche du module ESP32 (192.168.4.1)...',
+      tension: 0.0,
+      courant: 0.0,
+      puissance: 0,
+      energie: savedEnergie,
+      niveau: 'ATTENTION',
+      message: 'En attente de connexion du module ESP32 (Wi-Fi déconnecté)...',
       relais: true,
       manuel: false,
       rearmement: -1,
-      frequence: 50.0,
-      facteurPuissance: 0.98,
-      puissanceApparente: 494,
-      temperatureBord: 32.0,
-      wifiConnected: true,
+      frequence: 0.0,
+      facteurPuissance: 0.0,
+      puissanceApparente: 0,
+      temperatureBord: 28.0,
+      wifiConnected: false,
       esp32Connected: false,
     };
   });
@@ -392,6 +392,15 @@ export default function App() {
         updatedData.wifiConnected = true;
         updatedData.esp32Connected = true;
 
+        // If tension is zero (sans secteur / mains outage), all derived AC metrics must be strictly zero
+        if (updatedData.tension === 0) {
+          updatedData.courant = 0;
+          updatedData.puissance = 0;
+          updatedData.puissanceApparente = 0;
+          updatedData.frequence = 0;
+          updatedData.facteurPuissance = 0;
+        }
+
         // Automatic threshold protection evaluation on client using the user's fixed settings
         if (!updatedData.manuel) {
           if (updatedData.tension === 0) {
@@ -423,7 +432,7 @@ export default function App() {
           updatedData.puissanceApparente = 0;
         }
 
-        // Cache last valid telemetry to localStorage to prevent 0-value flashing on refresh
+        // Cache last valid energy to localStorage
         try {
           localStorage.setItem('smart_energy_telemetry', JSON.stringify(updatedData));
         } catch {}
@@ -439,16 +448,22 @@ export default function App() {
         // Increment consecutive failure counter
         consecutiveFailsRef.current += 1;
 
-        // Fault-tolerant buffer: Keep existing telemetry for 6 ticks (~6s) without wiping to 0
-        if (consecutiveFailsRef.current >= 6) {
+        // Disconnected state: strictly 0V, 0A, 0W when ESP32 is absent or disconnected
+        if (consecutiveFailsRef.current >= 3) {
           activeEndpointRef.current = null;
           setData((prev) => ({
             ...prev,
+            tension: 0.0,
+            courant: 0.0,
+            puissance: 0,
+            puissanceApparente: 0,
+            frequence: 0.0,
+            facteurPuissance: 0.0,
             wifiConnected: false,
             esp32Connected: false,
-            // DO NOT reset energie to 0 - keep cumulative Wh intact
+            // Keep cumulative Wh energy intact
             niveau: 'ATTENTION',
-            message: `Recherche ESP32 (${targetIp})... Assurez-vous d'être connecté au Wi-Fi ESP32`,
+            message: `Module ESP32 non connecté (${targetIp}) — Wi-Fi déconnecté`,
           }));
         }
       }

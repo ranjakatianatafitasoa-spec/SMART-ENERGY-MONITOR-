@@ -31,16 +31,16 @@ interface SystemSettingsState {
 const PORT = 3000;
 
 let state: ESP32DataState = {
-  tension: 228.4,
-  courant: 2.15,
-  puissance: 491,
-  energie: 12.4,
-  frequence: 50.0,
-  facteurPuissance: 0.98,
-  puissanceApparente: 501,
-  temperatureBord: 36.2,
-  niveau: 'NORMAL',
-  message: 'Système nominal (Serveur Active)',
+  tension: 0.0,
+  courant: 0.0,
+  puissance: 0,
+  energie: 0.0,
+  frequence: 0.0,
+  facteurPuissance: 0.0,
+  puissanceApparente: 0,
+  temperatureBord: 28.0,
+  niveau: 'ATTENTION',
+  message: 'En attente de connexion du module ESP32 (Wi-Fi déconnecté)',
   relais: true,
   manuel: false,
   rearmement: true,
@@ -56,9 +56,9 @@ let settings: SystemSettingsState = {
   soundAlerts: true,
 };
 
-// Simulation phase accumulator for fallback when real ESP32 is not sending data
+// Simulation phase accumulator ONLY used if explicitly requested with ?simulate=true
 let simPhase = 0;
-let simEnergy = 12.4;
+let simEnergy = 0.0;
 
 async function startServer() {
   const app = express();
@@ -118,26 +118,23 @@ async function startServer() {
 
     const isSimulate = req.query.simulate === 'true';
 
-    if (!isEspActive) {
-      // Continuous realistic live electrical cycle when no physical ESP32 is actively streaming
+    if (isSimulate) {
+      // Simulation mode ONLY when explicitly requested via ?simulate=true
       simPhase += 0.25;
       const noise = (Math.random() - 0.5) * 0.8;
       let rawV = Number((229.0 + Math.sin(simPhase * 0.2) * 2.2 + noise).toFixed(1));
 
-      // Check if simulated fault was requested
       if (req.query.fault === 'outage') {
         rawV = 0;
       } else if (req.query.fault === 'overvoltage') {
         rawV = 264.5;
       }
 
-      // Check thresholds and calculate relay state
       const { niveau, message, finalRelais } = evaluateThresholds(rawV, state.courant, state.relais, state.manuel);
       state.relais = finalRelais;
       state.niveau = niveau;
       state.message = message;
 
-      // Current only flows if relay is ON and voltage is present
       const rawI = state.relais && rawV > 0
         ? Number((Math.max(0.1, 2.15 + Math.sin(simPhase * 0.35) * 0.6 + (Math.random() - 0.5) * 0.15)).toFixed(2))
         : 0;
@@ -154,11 +151,21 @@ async function startServer() {
       state.frequence = Number((49.95 + Math.random() * 0.1).toFixed(2));
       state.facteurPuissance = pf;
       state.temperatureBord = Number((34.5 + Math.random() * 0.8).toFixed(1));
+    } else if (!isEspActive) {
+      // Disconnected state: strictly 0V, 0A, 0W when physical ESP32 is absent
+      state.tension = 0.0;
+      state.courant = 0.0;
+      state.puissance = 0;
+      state.puissanceApparente = 0;
+      state.frequence = 0.0;
+      state.facteurPuissance = 0.0;
+      state.niveau = 'ATTENTION';
+      state.message = 'En attente de connexion du module ESP32 (Wi-Fi déconnecté)';
     }
 
     res.json({
       ...state,
-      wifiConnected: true,
+      wifiConnected: isEspActive || isSimulate,
       esp32Connected: isEspActive,
       settings,
     });

@@ -23,7 +23,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   niveau,
   message,
   relais = true,
-  tension = 230,
+  tension = 0,
   courant = 0,
 }) => {
   const isCoupure = tension === 0 || (message && message.toLowerCase().includes('coupure'));

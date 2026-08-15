@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Sliders, Volume2, Save, Check, Wifi, Radio, Globe, RefreshCw, CheckCircle2, XCircle, BellRing } from 'lucide-react';
+import { Sliders, Volume2, Save, Check, Wifi, Radio, Globe, RefreshCw, CheckCircle2, XCircle, BellRing, Bell, Smartphone } from 'lucide-react';
+import { nativeService } from '../services/nativeService';
 
 export interface SystemSettings {
   minVoltage: number;
@@ -391,6 +392,36 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 />
               </button>
             </div>
+          </div>
+
+          {/* Notifications Système Android */}
+          <div className="p-3.5 sm:p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+            <div className="flex items-center gap-2.5 text-slate-300">
+              <Smartphone className="w-4 h-4 text-cyan-400 shrink-0" />
+              <div>
+                <span className="text-xs font-semibold block">Notifications Android</span>
+                <span className="text-[10px] text-slate-400">Alertes surtension, coupure & relais</span>
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                const granted = await nativeService.requestNotificationPermission();
+                if (granted) {
+                  await nativeService.sendAlertNotification(
+                    'normal',
+                    '⚡ TEST SMART ÉNERGIE',
+                    'Les notifications Android de sécurité sont opérationnelles !'
+                  );
+                  showToast('Notification de test envoyée', 'success');
+                } else {
+                  showToast('Autorisation notifications requise dans Paramètres Android', 'warning');
+                }
+              }}
+              className="px-3 py-1.5 rounded-lg bg-cyan-950 hover:bg-cyan-900 border border-cyan-700/50 text-cyan-300 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+            >
+              <Bell className="w-3.5 h-3.5" />
+              <span>Tester notification</span>
+            </button>
           </div>
         </div>
 

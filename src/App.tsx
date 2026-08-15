@@ -17,6 +17,7 @@ import {
   exportOrPrintPdf,
 } from './utils/pdfUtils';
 import { CheckCircle2, AlertTriangle, AlertOctagon, Info, X } from 'lucide-react';
+import { nativeService } from './services/nativeService';
 
 const INTERVALLE_RELEVE_MS = 60000; // 1 minute snapshot for PDF history
 
@@ -101,6 +102,7 @@ export default function App() {
   ]);
   const dernierNiveauRef = useRef<string | null>('NORMAL');
   const dernierRelaisRef = useRef<boolean | null>(true);
+  const wasConnectedRef = useRef<boolean | null>(null);
 
   // Configurable System Settings & Thresholds with persistent localStorage backing
   const [settings, setSettings] = useState<SystemSettings>(() => {
@@ -191,8 +193,43 @@ export default function App() {
     setIsEnergyModalOpen(false);
   }, []);
 
-  // Popstate Listener: Intercepts mobile back button
+    // Popstate Listener: Intercepts mobile back button
   useEffect(() => {
+    // 1. Android & Native Features Initialization (Permissions & Channel)
+    nativeService.initNativeFeatures().then((status) => {
+      if (status.isNative) {
+        console.log('[Native] Initialized, notifications granted:', status.notificationsGranted);
+      }
+    });
+
+    // 2. Wi-Fi & Network change listener
+    const cleanupNet = nativeService.onNetworkChange((netStatus) => {
+      if (!netStatus.connected) {
+        showToast('Réseau Wi-Fi déconnecté', 'warning');
+      } else if (netStatus.connectionType === 'wifi') {
+        showToast('Connecté au Wi-Fi. Recherche du module ESP32...', 'info');
+      }
+    });
+
+    // 3. Hardware Back button listener on Android
+    const cleanupNativeBack = nativeService.onBackButton(() => {
+      if (isEnergyModalOpen) {
+        setIsEnergyModalOpen(false);
+        return;
+      }
+      if (activeTab !== 'dashboard') {
+        setActiveTab('dashboard');
+        return;
+      }
+      const now = Date.now();
+      if (now - lastBackPressRef.current < 2000) {
+        window.history.back();
+      } else {
+        lastBackPressRef.current = now;
+        showToast("Appuyez à nouveau pour quitter l'application", "info");
+      }
+    });
+
     // Seed initial history entries
     window.history.replaceState({ tab: 'dashboard', modal: null }, '');
     window.history.pushState({ tab: 'dashboard', modal: null }, '');
@@ -228,6 +265,8 @@ export default function App() {
     window.addEventListener('popstate', onPopState);
     return () => {
       window.removeEventListener('popstate', onPopState);
+      cleanupNet();
+      cleanupNativeBack();
     };
   }, [activeTab, isEnergyModalOpen, showToast]);
 
@@ -243,6 +282,7 @@ export default function App() {
       return;
     }
 
+    const curSettings = settingsRef.current;
     const changementNiveau = dernierNiveauRef.current !== null && newData.niveau !== dernierNiveauRef.current;
     const changementRelais = dernierRelaisRef.current !== null && newData.relais !== dernierRelaisRef.current;
     const estIncident = newData.niveau !== 'NORMAL' || !newData.relais;
@@ -258,43 +298,63 @@ export default function App() {
       // Sound alert & auto-toast on state transitions
       if (newData.tension === 0) {
         showToast('COUPURE SECTEUR (0V) DÉTECTÉE', 'danger');
-      } else if (newData.niveau === 'DANGER') {
-        showToast(newData.message || 'ALERTE CRITIQUE DE SÉCURITÉ', 'danger');
-      } else if (newData.niveau === 'ATTENTION') {
-        showToast(newData.message || 'AVERTISSEMENT RÉSEAU DÉTECTÉ', 'warning');
+        nativeService.sendAlertNotification(
+          'soustension',
+          '⚠️ COUPURE SECTEUR (0V)',
+          'Absence de tension secteur détectée sur le réseau électrique'
+        );
+      } else if (newData.tension > curSettings.maxVoltage) {
+        showToast(newData.message || 'SURTENSION CRITIQUE', 'danger');
+        nativeService.sendAlertNotification(
+          'surtension',
+          '⚡ ALERTE SURTENSION',
+          `Tension mesurée: ${newData.tension.toFixed(1)}V (> ${curSettings.maxVoltage}V). Relais déclenché.`
+        );
+      } else if (newData.tension < curSettings.minVoltage) {
+        showToast(newData.message || 'SOUS-TENSION DÉTECTÉE', 'warning');
+        nativeService.sendAlertNotification(
+          'soustension',
+          '⚠️ ALERTE SOUS-TENSION',
+          `Tension mesurée: ${newData.tension.toFixed(1)}V (< ${curSettings.minVoltage}V). Relais déclenché.`
+        );
+      } else if (newData.courant > curSettings.maxCurrent) {
+        showToast(newData.message || 'SURINTENSITÉ DÉTECTÉE', 'warning');
+        nativeService.sendAlertNotification(
+          'surintensite',
+          '⚡ ALERTE SURINTENSITÉ',
+          `Courant mesuré: ${newData.courant.toFixed(2)}A (> ${curSettings.maxCurrent}A). Relais déclenché.`
+        );
+      } else if (newData.puissance > ((curSettings.maxVoltage * curSettings.maxCurrent) || 3500)) {
+        showToast('PUISSANCE EXCESSIVE', 'warning');
+        nativeService.sendAlertNotification(
+          'surpuissance',
+          '⚡ ALERTE SURPUISSANCE',
+          `Puissance active mesurée: ${newData.puissance}W dépassant la limite assignée.`
+        );
       } else if (!newData.relais && dernierRelaisRef.current === true) {
         showToast('RELAIS DÉCONNECTÉ (OFF)', 'warning');
+        nativeService.sendAlertNotification(
+          'relais_off',
+          '🛡️ DÉCLENCHEMENT RELAIS DE SÉCURITÉ',
+          'Le relais de sécurité a coupé la charge pour protéger les équipements.'
+        );
+      } else if (dernierNiveauRef.current && dernierNiveauRef.current !== 'NORMAL' && newData.niveau === 'NORMAL') {
+        showToast('RETOUR À L\'ÉTAT NORMAL', 'success');
+        nativeService.sendAlertNotification(
+          'normal',
+          '✅ RETOUR À L\'ÉTAT NORMAL',
+          'Tous les paramètres électriques sont revenus dans les plages de sécurité.'
+        );
       }
 
-      if (settings.soundAlerts && estIncident) {
+      if (curSettings.soundAlerts && estIncident) {
         playAlertSound(1046, 0.3);
-      }
-
-      // Native system notification when in background or when incident triggers
-      if (estIncident && typeof window !== 'undefined' && 'Notification' in window) {
-        if (Notification.permission === 'granted') {
-          try {
-            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-              navigator.serviceWorker.controller.postMessage({
-                type: 'SHOW_NOTIFICATION',
-                title: newData.tension === 0 ? '⚠️ COUPURE SECTEUR (0V)' : `⚡ ALERTE ÉLECTRIQUE (${newData.niveau})`,
-                body: newData.message || `Tension: ${newData.tension.toFixed(1)}V, Courant: ${newData.courant.toFixed(2)}A`,
-                tag: 'incident-alert',
-              });
-            } else {
-              new Notification(newData.tension === 0 ? '⚠️ COUPURE SECTEUR' : '⚡ ALERTE ÉLECTRIQUE', {
-                body: newData.message || `${newData.tension.toFixed(1)}V - ${newData.courant.toFixed(2)}A`,
-                icon: '/icon-192.png',
-              });
-            }
-          } catch {}
-        }
       }
     }
 
     dernierNiveauRef.current = newData.niveau;
     dernierRelaisRef.current = newData.relais;
-  }, [settings.soundAlerts, playAlertSound, showToast]);
+  }, [playAlertSound, showToast]);
 
   // Screen WakeLock to maintain Wi-Fi active telemetry without Android sleeping
   useEffect(() => {
@@ -439,6 +499,18 @@ export default function App() {
 
         setData(updatedData);
 
+        // Connection restored notification
+        if (wasConnectedRef.current === false) {
+          wasConnectedRef.current = true;
+          nativeService.sendAlertNotification(
+            'connexion',
+            '✅ ESP32 CONNECTÉ',
+            `Liaison rétablie avec succès avec le module ESP32 (${targetIp})`
+          );
+        } else if (wasConnectedRef.current === null) {
+          wasConnectedRef.current = true;
+        }
+
         setHistoryV((prev) => [...prev.slice(-59), updatedData.tension]);
         setHistoryI((prev) => [...prev.slice(-59), updatedData.courant]);
         setHistoryP((prev) => [...prev.slice(-59), updatedData.puissance]);
@@ -450,6 +522,14 @@ export default function App() {
 
         // Disconnected state: strictly 0V, 0A, 0W when ESP32 is absent or disconnected
         if (consecutiveFailsRef.current >= 3) {
+          if (wasConnectedRef.current === true) {
+            wasConnectedRef.current = false;
+            nativeService.sendAlertNotification(
+              'deconnexion',
+              '⚠️ LIAISON ESP32 PERDUE',
+              `Le module ESP32 (${targetIp}) est devenu injoignable. Vérifiez la connexion Wi-Fi.`
+            );
+          }
           activeEndpointRef.current = null;
           setData((prev) => ({
             ...prev,

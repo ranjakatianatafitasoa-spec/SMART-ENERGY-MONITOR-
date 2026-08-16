@@ -5,14 +5,16 @@ const config: CapacitorConfig = {
   appName: 'Smart Énergie Monitor',
   webDir: 'dist',
   server: {
-    androidScheme: 'https',
+    androidScheme: 'http',
     cleartext: true,
     allowNavigation: [
       '192.168.4.1',
-      '192.168.*',
-      '10.*',
-      '172.16.*',
+      '192.168.4.*',
+      '192.168.*.*',
+      '10.*.*.*',
+      '172.16.*.*',
       'localhost',
+      '*',
     ],
   },
   plugins: {
@@ -20,6 +22,9 @@ const config: CapacitorConfig = {
       smallIcon: 'ic_stat_icon_config_sample',
       iconColor: '#06B6D4',
       sound: 'beep.wav',
+    },
+    CapacitorHttp: {
+      enabled: true,
     },
   },
 };

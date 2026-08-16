@@ -204,10 +204,9 @@ export default function App() {
 
     // 2. Wi-Fi & Network change listener
     const cleanupNet = nativeService.onNetworkChange((netStatus) => {
+      // Only notify on actual network state changes if native
       if (!netStatus.connected) {
-        showToast('Réseau Wi-Fi déconnecté', 'warning');
-      } else if (netStatus.connectionType === 'wifi') {
-        showToast('Connecté au Wi-Fi. Recherche du module ESP32...', 'info');
+        // Disconnected
       }
     });
 

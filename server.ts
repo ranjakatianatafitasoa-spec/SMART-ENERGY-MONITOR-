@@ -338,6 +338,39 @@ async function startServer() {
     res.download(inoPath, 'smart_energy_monitor_esp32.ino');
   });
 
+  // Background poller: automatically discovers & grabs data from ESP32 SoftAP (192.168.4.1)
+  setInterval(async () => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 900);
+      const res = await fetch('http://192.168.4.1/data', { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const json = (await res.json()) as any;
+        if (json && (typeof json.tension === 'number' || typeof json.v === 'number')) {
+          const v = Number(json.tension ?? json.v);
+          const i = Number(json.courant ?? json.i ?? 0);
+          const p = Number(json.puissance ?? json.p ?? Math.round(v * i));
+          state.tension = v;
+          state.courant = i;
+          state.puissance = p;
+          state.energie = Number(json.energie ?? json.e ?? state.energie);
+          state.frequence = Number(json.frequence ?? json.f ?? 50.0);
+          state.facteurPuissance = Number(json.facteurPuissance ?? json.pf ?? 0.98);
+          state.puissanceApparente = Math.round(v * i);
+          state.lastEsp32Seen = Date.now();
+          state.esp32Connected = true;
+          const { niveau, message, finalRelais } = evaluateThresholds(v, i, state.relais, state.manuel);
+          state.niveau = niveau;
+          state.message = message;
+          state.relais = finalRelais;
+        }
+      }
+    } catch {
+      // SoftAP not reachable from this machine or currently offline
+    }
+  }, 1500);
+
   app.get('/api/esp32/code', (req, res) => {
     const host = req.get('host') || 'localhost:3000';
     const proto = req.protocol || 'http';

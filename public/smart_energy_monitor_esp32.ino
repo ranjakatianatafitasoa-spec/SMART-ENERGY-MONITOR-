@@ -208,7 +208,8 @@ void effectuerMesuresAC() {
 void ajouterHeadersCORS() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
   server.sendHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, Access-Control-Request-Private-Network");
+  server.sendHeader("Access-Control-Allow-Private-Network", "true");
 }
 
 void handleOptions() {
@@ -216,7 +217,7 @@ void handleOptions() {
   server.send(204);
 }
 
-// GET /data ou GET /api/data : Envoie les données en temps réel au format JSON pur
+// GET /data ou GET /api/data : Envoie les données en temps réel au format JSON ou JSONP
 void handleGetData() {
   ajouterHeadersCORS();
   
@@ -249,6 +250,14 @@ void handleGetData() {
 
   String reponse;
   serializeJson(doc, reponse);
+
+  // Support JSONP pour contourner le blocage Mixed-Content HTTPS des navigateurs Desktop
+  if (server.hasArg("callback")) {
+    String callback = server.arg("callback");
+    server.send(200, "application/javascript", callback + "(" + reponse + ");");
+    return;
+  }
+
   server.send(200, "application/json", reponse);
 }
 

@@ -338,6 +338,27 @@ async function startServer() {
     res.download(inoPath, 'smart_energy_monitor_esp32.ino');
   });
 
+  // 7. Backend ESP32 Reverse Proxy Endpoint
+  app.all('/api/esp32-proxy/*', async (req, res) => {
+    const subPath = req.url.replace(/^\/api\/esp32-proxy/, '');
+    const espUrl = `http://192.168.4.1${subPath}`;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1200);
+      const forwardRes = await fetch(espUrl, {
+        method: req.method,
+        headers: { 'Content-Type': 'application/json' },
+        body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      const data = await forwardRes.json();
+      return res.json(data);
+    } catch (err) {
+      return res.status(502).json({ error: 'ESP32 non joignable depuis le serveur', details: String(err) });
+    }
+  });
+
   // Background poller: automatically discovers & grabs data from ESP32 SoftAP (192.168.4.1)
   setInterval(async () => {
     try {
@@ -369,7 +390,7 @@ async function startServer() {
     } catch {
       // SoftAP not reachable from this machine or currently offline
     }
-  }, 1500);
+  }, 1000);
 
   app.get('/api/esp32/code', (req, res) => {
     const host = req.get('host') || 'localhost:3000';

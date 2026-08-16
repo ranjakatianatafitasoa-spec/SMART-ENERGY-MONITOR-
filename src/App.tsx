@@ -18,6 +18,7 @@ import {
 } from './utils/pdfUtils';
 import { CheckCircle2, AlertTriangle, AlertOctagon, Info, X } from 'lucide-react';
 import { nativeService } from './services/nativeService';
+import { esp32Dispatcher } from './services/esp32Dispatcher';
 
 const INTERVALLE_RELEVE_MS = 60000; // 1 minute snapshot for PDF history
 
@@ -399,40 +400,50 @@ export default function App() {
       let fetched: ESP32Data | null = null;
       let workingEndpoint: string | null = null;
 
-      // Candidate list of endpoints to query in priority order
-      const candidates: string[] = [];
-      if (activeEndpointRef.current) {
-        candidates.push(activeEndpointRef.current);
-      }
-      if (curSettings.connectionMode !== 'server') {
-        const directIpUrl = `http://${targetIp}/data`;
-        if (!candidates.includes(directIpUrl)) candidates.push(directIpUrl);
-        const apUrl = 'http://192.168.4.1/data';
-        if (!candidates.includes(apUrl)) candidates.push(apUrl);
-      }
-      if (!candidates.includes('/api/data')) candidates.push('/api/data');
-      if (!candidates.includes('/data')) candidates.push('/data');
+      // 1. Try unified multi-channel telemetry fetch (Direct Fetch -> JSONP -> Local Proxy)
+      try {
+        const result = await esp32Dispatcher.fetchTelemetry(targetIp);
+        if (result && (typeof result.tension === 'number' || typeof result.v === 'number')) {
+          fetched = result;
+          workingEndpoint = `http://${targetIp}/data`;
+        }
+      } catch {}
 
-      // Attempt candidates in sequence with fast timeout
-      for (const endpoint of candidates) {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 950);
-          const res = await fetch(endpoint, {
-            signal: controller.signal,
-            mode: 'cors',
-          });
-          clearTimeout(timeoutId);
-          if (res.ok) {
-            const json = await res.json();
-            if (json && (typeof json.tension === 'number' || typeof json.v === 'number')) {
-              fetched = json;
-              workingEndpoint = endpoint;
-              break;
+      // 2. Candidate list of endpoints fallback
+      if (!fetched) {
+        const candidates: string[] = [];
+        if (activeEndpointRef.current) {
+          candidates.push(activeEndpointRef.current);
+        }
+        if (curSettings.connectionMode !== 'server') {
+          const directIpUrl = `http://${targetIp}/data`;
+          if (!candidates.includes(directIpUrl)) candidates.push(directIpUrl);
+          const apUrl = 'http://192.168.4.1/data';
+          if (!candidates.includes(apUrl)) candidates.push(apUrl);
+        }
+        if (!candidates.includes('/api/data')) candidates.push('/api/data');
+        if (!candidates.includes('/data')) candidates.push('/data');
+
+        for (const endpoint of candidates) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 950);
+            const res = await fetch(endpoint, {
+              signal: controller.signal,
+              mode: 'cors',
+            });
+            clearTimeout(timeoutId);
+            if (res.ok) {
+              const json = await res.json();
+              if (json && (typeof json.tension === 'number' || typeof json.v === 'number')) {
+                fetched = json;
+                workingEndpoint = endpoint;
+                break;
+              }
             }
+          } catch {
+            // Candidate unavailable, continue to next
           }
-        } catch {
-          // Candidate unavailable, continue to next
         }
       }
 
@@ -607,23 +618,14 @@ export default function App() {
       return nextData;
     });
 
-    // Send to Local Server (POST JSON)
-    fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newSettings),
-    }).catch(() => {});
-
-    // Send directly to ESP32 WebServer (both POST JSON and GET fallback)
+    // Dispatch settings to local server and directly to ESP32 WebServer
     const targetIp = newSettings.esp32Ip || '192.168.4.1';
-    fetch(`http://${targetIp}/settings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newSettings),
-      mode: 'cors',
-    }).catch(() => {
-      fetch(`http://${targetIp}/settings?minVoltage=${newSettings.minVoltage}&maxVoltage=${newSettings.maxVoltage}&maxCurrent=${newSettings.maxCurrent}`, { mode: 'cors' }).catch(() => {});
-    });
+    esp32Dispatcher.dispatchAction('/settings', {
+      minVoltage: newSettings.minVoltage,
+      maxVoltage: newSettings.maxVoltage,
+      maxCurrent: newSettings.maxCurrent,
+      soundAlerts: newSettings.soundAlerts,
+    }, targetIp);
   };
 
   // Relay Actions (Direct Hardware & Local Server Broadcast)
@@ -645,10 +647,8 @@ export default function App() {
       nextRelais ? 'success' : 'warning'
     );
 
-    // 1. Direct command to ESP32 WebServer (Fastest < 30ms)
-    fetch(`http://${targetIp}/relais?etat=${nextRelais ? 'on' : 'off'}`, { mode: 'cors' }).catch(() => {});
-    // 2. Backup command to server
-    fetch(`/relais?etat=${nextRelais ? 'on' : 'off'}`).catch(() => {});
+    // Multi-protocol dispatch: Image Beacon + No-CORS Fetch + Standard Fetch + Local Proxy
+    esp32Dispatcher.dispatchAction('/relais', { etat: nextRelais ? 'on' : 'off' }, targetIp);
   };
 
   const handleRepasserAuto = () => {
@@ -671,24 +671,16 @@ export default function App() {
     });
 
     showToast('Mode AUTOMATIQUE réactivé avec succès', 'info');
-    fetch(`http://${targetIp}/relais?etat=auto`, { mode: 'cors' }).catch(() => {});
-    fetch('/relais?etat=auto').catch(() => {});
+    esp32Dispatcher.dispatchAction('/relais', { etat: 'auto' }, targetIp);
   };
 
   const handleRecalibrer = () => {
     const targetIp = settingsRef.current.esp32Ip || '192.168.4.1';
     showToast('Recalibration des capteurs en cours…', 'info');
-    fetch(`http://${targetIp}/calibrer`, { mode: 'cors' }).catch(() => {});
-    fetch('/calibrer')
-      .then((res) => res.text())
-      .then(() => {
-        showToast('Capteurs et compteur recalibrés avec succès', 'success');
-      })
-      .catch(() => {
-        setTimeout(() => {
-          showToast('Capteurs recalibrés avec succès', 'success');
-        }, 1000);
-      });
+    esp32Dispatcher.dispatchAction('/calibrer', {}, targetIp);
+    setTimeout(() => {
+      showToast('Capteurs et compteur recalibrés avec succès', 'success');
+    }, 400);
   };
 
   const handleNavigateToReports = () => {

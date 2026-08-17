@@ -19,7 +19,21 @@
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700;800&family=JetBrains+Mono:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=Rajdhani:wght@600;700;800&display=swap" rel="stylesheet">
   </head>
   <body class="bg-[#050814] text-slate-100 font-['Plus_Jakarta_Sans',sans-serif] antialiased selection:bg-cyan-500 selection:text-black">
-    <div id="root"></div>
+    <div id="root">
+      <div style="position:fixed;inset:0;background:#050814;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:sans-serif;z-index:99999;">
+        <div style="position:relative;width:72px;height:72px;border-radius:18px;background:linear-gradient(135deg,#06b6d4,#f59e0b);display:flex;align-items:center;justify-content:center;box-shadow:0 0 35px rgba(6,182,212,0.6);margin-bottom:20px;">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="#050814" stroke="#050814" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+        </div>
+        <div style="color:#22d3ee;font-size:16px;font-weight:800;letter-spacing:2px;margin-bottom:8px;text-transform:uppercase;">
+          Smart Énergie Monitor
+        </div>
+        <div style="color:#64748b;font-size:11px;font-family:monospace;letter-spacing:1px;">
+          CHARGEMENT EN COURS...
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -17,12 +17,16 @@ import {
   exportOrPrintPdf,
 } from './utils/pdfUtils';
 import { CheckCircle2, AlertTriangle, AlertOctagon, Info, X } from 'lucide-react';
+import { motion } from 'motion/react';
 import { nativeService } from './services/nativeService';
 import { esp32Dispatcher } from './services/esp32Dispatcher';
+import { AppBootSplash } from './components/AppBootSplash';
+import { PageTransitionLoader } from './components/PageTransitionLoader';
 
 const INTERVALLE_RELEVE_MS = 60000; // 1 minute snapshot for PDF history
 
 export default function App() {
+  const [isBooting, setIsBooting] = useState(true);
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
 
   // Current Live State with localStorage energy persistence
@@ -773,6 +777,17 @@ export default function App() {
 
   return (
     <div className="max-w-[1300px] mx-auto p-2 sm:p-3.5 pb-[calc(5.2rem+env(safe-area-inset-bottom,0px))] sm:pb-6 min-h-screen flex flex-col justify-start">
+      {/* High-Tech App Launch Splash & Boot Loader */}
+      {isBooting && (
+        <AppBootSplash
+          onBootComplete={() => setIsBooting(false)}
+          esp32Connected={data.esp32Connected}
+        />
+      )}
+
+      {/* Laser Top Progress Glow Indicator on Tab / Route Change */}
+      <PageTransitionLoader activeTab={activeTab} />
+
       {/* Header displayed on all pages */}
       <Header
         data={data}
@@ -830,71 +845,107 @@ export default function App() {
         </div>
       )}
 
-      {/* PAGE 1: DASHBOARD (Notification, Oscillation, Cases Métriques) */}
-      {activeTab === 'dashboard' && (
-        <div className="space-y-2.5 sm:space-y-3.5 animate-fadeIn">
-          {/* 1. Notification / Status Bar */}
-          <StatusBar
-            niveau={data.niveau}
-            message={data.message}
-            relais={data.relais}
-            tension={data.tension}
-            courant={data.courant}
-          />
+      {/* Main Tab Content View Container */}
+      <main className="flex-1 w-full">
+        {/* PAGE 1: DASHBOARD (Notification, Oscillation, Cases Métriques) */}
+        {activeTab === 'dashboard' && (
+          <motion.div
+            key="dashboard"
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="space-y-2.5 sm:space-y-3.5"
+          >
+            {/* 1. Notification / Status Bar */}
+            <StatusBar
+              niveau={data.niveau}
+              message={data.message}
+              relais={data.relais}
+              tension={data.tension}
+              courant={data.courant}
+            />
 
-          {/* 2. Oscillation - Live Oscilloscope Signal Waveform */}
-          <ScopeCanvas voltage={data.tension} current={data.courant} />
+            {/* 2. Oscillation - Live Oscilloscope Signal Waveform */}
+            <ScopeCanvas voltage={data.tension} current={data.courant} />
 
-          {/* 3. Cases Tension, Courant, Puissance, Énergie */}
-          <MetricsGrid
-            data={data}
-            onOpenEnergyModal={handleOpenEnergyModal}
-          />
-        </div>
-      )}
+            {/* 3. Cases Tension, Courant, Puissance, Énergie */}
+            <MetricsGrid
+              data={data}
+              onOpenEnergyModal={handleOpenEnergyModal}
+            />
+          </motion.div>
+        )}
 
-      {/* PAGE 2: COMMANDE RELAIS (Dedicated Relay Page) */}
-      {activeTab === 'relais' && (
-        <RelayPage
-          data={data}
-          settings={settings}
-          onToggleRelay={handleToggleRelay}
-          onRepasserAuto={handleRepasserAuto}
-          onRecalibrer={handleRecalibrer}
-        />
-      )}
+        {/* PAGE 2: COMMANDE RELAIS (Dedicated Relay Page) */}
+        {activeTab === 'relais' && (
+          <motion.div
+            key="relais"
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+          >
+            <RelayPage
+              data={data}
+              settings={settings}
+              onToggleRelay={handleToggleRelay}
+              onRepasserAuto={handleRepasserAuto}
+              onRecalibrer={handleRecalibrer}
+            />
+          </motion.div>
+        )}
 
-      {/* PAGE 3: GRAPHIQUE (OSCILLOSCOPE & VECTOR CHARTS) */}
-      {activeTab === 'history' && (
-        <div className="space-y-4 animate-fadeIn">
-          {/* 3 Vector Canvas Charts */}
-          <ChartsGrid
-            currentData={data}
-            historyV={historyV}
-            historyI={historyI}
-            historyP={historyP}
-          />
-        </div>
-      )}
+        {/* PAGE 3: GRAPHIQUE (OSCILLOSCOPE & VECTOR CHARTS) */}
+        {activeTab === 'history' && (
+          <motion.div
+            key="history"
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="space-y-4"
+          >
+            {/* 3 Vector Canvas Charts */}
+            <ChartsGrid
+              currentData={data}
+              historyV={historyV}
+              historyI={historyI}
+              historyP={historyP}
+            />
+          </motion.div>
+        )}
 
-      {/* PAGE 4: RAPPORTS & INCIDENTS */}
-      {activeTab === 'reports' && (
-        <ReportsTab
-          records={historiqueRecords}
-          onClearReports={handleClearReports}
-          onExportPdf={handleGenererRapportPDF}
-          showToast={showToast}
-        />
-      )}
+        {/* PAGE 4: RAPPORTS & INCIDENTS */}
+        {activeTab === 'reports' && (
+          <motion.div
+            key="reports"
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+          >
+            <ReportsTab
+              records={historiqueRecords}
+              onClearReports={handleClearReports}
+              onExportPdf={handleGenererRapportPDF}
+              showToast={showToast}
+            />
+          </motion.div>
+        )}
 
-      {/* PAGE 4: PARAMÈTRES */}
-      {activeTab === 'settings' && (
-        <SettingsTab
-          settings={settings}
-          onUpdateSettings={handleUpdateSettings}
-          showToast={showToast}
-        />
-      )}
+        {/* PAGE 5: PARAMÈTRES */}
+        {activeTab === 'settings' && (
+          <motion.div
+            key="settings"
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+          >
+            <SettingsTab
+              settings={settings}
+              onUpdateSettings={handleUpdateSettings}
+              showToast={showToast}
+            />
+          </motion.div>
+        )}
+      </main>
 
       {/* Energy Modal */}
       <EnergyModal

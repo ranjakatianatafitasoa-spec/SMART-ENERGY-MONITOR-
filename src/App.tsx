@@ -300,50 +300,56 @@ export default function App() {
         showToast('COUPURE SECTEUR (0V) DÉTECTÉE', 'danger');
         nativeService.sendAlertNotification(
           'soustension',
-          '⚠️ COUPURE SECTEUR (0V)',
-          'Absence de tension secteur détectée sur le réseau électrique'
+          '🔴 COUPURE SECTEUR (0V)',
+          'Absence de tension secteur détectée sur le réseau électrique • Sortie sécurisée',
+          { voltage: 0 }
         );
       } else if (newData.tension > curSettings.maxVoltage) {
         showToast(newData.message || 'SURTENSION CRITIQUE', 'danger');
         nativeService.sendAlertNotification(
           'surtension',
-          '⚡ ALERTE SURTENSION',
-          `Tension mesurée: ${newData.tension.toFixed(1)}V (> ${curSettings.maxVoltage}V). Relais déclenché.`
+          '⚡ SURTENSION CRITIQUE',
+          `Tension mesurée: ${newData.tension.toFixed(1)} V (> ${curSettings.maxVoltage} V) • Relais ouvert pour protection`,
+          { voltage: newData.tension }
         );
       } else if (newData.tension < curSettings.minVoltage) {
         showToast(newData.message || 'SOUS-TENSION DÉTECTÉE', 'warning');
         nativeService.sendAlertNotification(
           'soustension',
-          '⚠️ ALERTE SOUS-TENSION',
-          `Tension mesurée: ${newData.tension.toFixed(1)}V (< ${curSettings.minVoltage}V). Relais déclenché.`
+          '⚠️ SOUS-TENSION SECTEUR',
+          `Tension mesurée: ${newData.tension.toFixed(1)} V (< ${curSettings.minVoltage} V) • Risque d'instabilité électrique`,
+          { voltage: newData.tension }
         );
       } else if (newData.courant > curSettings.maxCurrent) {
         showToast(newData.message || 'SURINTENSITÉ DÉTECTÉE', 'warning');
         nativeService.sendAlertNotification(
           'surintensite',
-          '⚡ ALERTE SURINTENSITÉ',
-          `Courant mesuré: ${newData.courant.toFixed(2)}A (> ${curSettings.maxCurrent}A). Relais déclenché.`
+          '⚡ SURINTENSITÉ DÉTECTÉE',
+          `Courant mesuré: ${newData.courant.toFixed(2)} A (> ${curSettings.maxCurrent} A) • Disjonction automatique active`,
+          { current: newData.courant }
         );
       } else if (newData.puissance > ((curSettings.maxVoltage * curSettings.maxCurrent) || 3500)) {
         showToast('PUISSANCE EXCESSIVE', 'warning');
         nativeService.sendAlertNotification(
           'surpuissance',
-          '⚡ ALERTE SURPUISSANCE',
-          `Puissance active mesurée: ${newData.puissance}W dépassant la limite assignée.`
+          '⚡ SURCHARGE DE PUISSANCE',
+          `Puissance active: ${newData.puissance} W dépassant la limite assignée`,
+          { power: newData.puissance }
         );
       } else if (!newData.relais && dernierRelaisRef.current === true) {
         showToast('RELAIS DÉCONNECTÉ (OFF)', 'warning');
         nativeService.sendAlertNotification(
           'relais_off',
-          '🛡️ DÉCLENCHEMENT RELAIS DE SÉCURITÉ',
-          'Le relais de sécurité a coupé la charge pour protéger les équipements.'
+          '🛡️ SÉCURITÉ ACTIVE — RELAIS OUVERT',
+          'Le relais de sécurité a coupé la charge pour protéger les équipements connectés.'
         );
       } else if (dernierNiveauRef.current && dernierNiveauRef.current !== 'NORMAL' && newData.niveau === 'NORMAL') {
         showToast('RETOUR À L\'ÉTAT NORMAL', 'success');
         nativeService.sendAlertNotification(
           'normal',
-          '✅ RETOUR À L\'ÉTAT NORMAL',
-          'Tous les paramètres électriques sont revenus dans les plages de sécurité.'
+          '✅ RÉSEAU ÉLECTRIQUE NORMALISÉ',
+          `Tension stable: ${newData.tension.toFixed(1)} V • Tous les paramètres sont dans les plages de sécurité`,
+          { voltage: newData.tension, current: newData.courant }
         );
       }
 

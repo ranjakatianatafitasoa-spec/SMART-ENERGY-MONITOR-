@@ -102,17 +102,17 @@ class NativeService {
   }
 
   /**
-   * Creates Android Notification Channel with sound & vibration
+   * Creates Android Notification Channel with sound, lights & vibration
    */
   private async createNotificationChannel(): Promise<void> {
     if (!this.isNative || this.channelCreated) return;
     try {
       await LocalNotifications.createChannel({
         id: 'smart_energy_critical_alerts',
-        name: 'Alertes Électriques d\'Urgence',
-        description: 'Notifications pour surtension, coupure, surintensité et état du relais',
+        name: 'Smart Énergie — Alertes Électriques',
+        description: 'Surveillance en temps réel des surtensions, coupures, surintensités et pilotage relais',
         importance: 5, // High priority / Heads-up
-        visibility: 1, // Public
+        visibility: 1, // Public on lockscreen
         sound: 'beep.wav',
         vibration: true,
         lights: true,
@@ -125,19 +125,25 @@ class NativeService {
   }
 
   /**
-   * Send a rich native alert notification
+   * Send a rich native alert notification with professional styling and icons
    */
   public async sendAlertNotification(
     typeKey: 'surtension' | 'soustension' | 'surintensite' | 'surpuissance' | 'deconnexion' | 'connexion' | 'relais_off' | 'normal',
     title: string,
-    body: string
+    body: string,
+    details?: { voltage?: number; current?: number; power?: number }
   ): Promise<void> {
-    // Prevent flood: throttle same notification key to once every 10 seconds
+    // Prevent flood: throttle same notification key to once every 6 seconds
     const now = Date.now();
-    if (this.lastAlertTimestamp[typeKey] && now - this.lastAlertTimestamp[typeKey] < 10000) {
+    if (this.lastAlertTimestamp[typeKey] && now - this.lastAlertTimestamp[typeKey] < 6000) {
       return;
     }
     this.lastAlertTimestamp[typeKey] = now;
+
+    const formattedTime = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const fullBody = details
+      ? `${body}\n[ ${formattedTime} ]`
+      : `${body}`;
 
     if (this.isNative) {
       try {
@@ -149,11 +155,13 @@ class NativeService {
               {
                 id: notifId,
                 title,
-                body,
+                body: fullBody,
+                summaryText: 'Smart Énergie Monitor',
                 channelId: 'smart_energy_critical_alerts',
-                smallIcon: 'ic_stat_icon_config_sample',
-                iconColor: '#06B6D4',
-                extra: { type: typeKey },
+                smallIcon: 'ic_stat_smart_energy',
+                largeIcon: 'ic_launcher',
+                iconColor: typeKey === 'normal' ? '#10B981' : typeKey === 'surtension' ? '#EF4444' : '#06B6D4',
+                extra: { type: typeKey, timestamp: now },
               },
             ],
           });
@@ -169,13 +177,17 @@ class NativeService {
             navigator.serviceWorker.controller.postMessage({
               type: 'SHOW_NOTIFICATION',
               title,
-              body,
+              body: fullBody,
               tag: `alert-${typeKey}`,
+              icon: '/icon-192.png',
+              badge: '/notification-icon.png',
+              vibrate: typeKey === 'surtension' ? [300, 100, 300, 100, 500] : [200, 100, 200],
             });
           } else {
             new Notification(title, {
-              body,
+              body: fullBody,
               icon: '/icon-192.png',
+              badge: '/notification-icon.png',
               tag: `alert-${typeKey}`,
             });
           }

@@ -36,15 +36,16 @@ self.addEventListener('activate', (event) => {
 // 3. Background Notifications and Messages from Client
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
-    const { title, body, tag, icon, vibrate } = event.data;
-    self.registration.showNotification(title || 'Smart Énergie Alerte', {
-      body: body || 'Incident électrique détecté',
+    const { title, body, tag, icon, badge, vibrate } = event.data;
+    self.registration.showNotification(title || 'Smart Énergie Monitor', {
+      body: body || 'Surveillance réseau électrique active',
       tag: tag || 'incident-alert',
       icon: icon || '/icon-192.png',
-      badge: '/favicon.svg',
+      badge: badge || '/notification-icon.png',
       vibrate: vibrate || [300, 100, 300, 100, 300],
       renotify: true,
-      requireInteraction: true,
+      requireInteraction: false,
+      silent: false,
       data: { url: '/' },
     });
   }

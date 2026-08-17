@@ -2,7 +2,7 @@ import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
 
-const srcImg = path.join(process.cwd(), 'src', 'assets', 'images', 'smart_energy_icon_1786956321978.jpg');
+const srcImg = path.join(process.cwd(), 'src', 'assets', 'images', 'app_logo_pro_1786990160085.jpg');
 
 async function generateAllIcons() {
   if (!fs.existsSync(srcImg)) {

@@ -74,25 +74,38 @@ async function generateAllIcons() {
     console.log(`Generated ${m.dir} icons (${m.size}px / fg ${m.fg}px)`);
   }
 
-  // 3. Notification Small & Large Icons in Drawable folders
+  // 3. Notification Small & Large Icons in Drawable folders (Clean alpha stencil for status bar)
   const drawables = [
-    'drawable',
-    'drawable-hdpi',
-    'drawable-mdpi',
-    'drawable-xhdpi',
-    'drawable-xxhdpi',
-    'drawable-xxxhdpi',
+    { dir: 'drawable', size: 48 },
+    { dir: 'drawable-mdpi', size: 24 },
+    { dir: 'drawable-hdpi', size: 36 },
+    { dir: 'drawable-xhdpi', size: 48 },
+    { dir: 'drawable-xxhdpi', size: 72 },
+    { dir: 'drawable-xxxhdpi', size: 96 },
   ];
 
+  const createStatusIconSvg = (size) => Buffer.from(`
+<svg width="${size}" height="${size}" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M48 6L14 18V46C14 67.5 28.5 87.2 48 92C67.5 87.2 82 67.5 82 46V18L48 6Z" fill="white" fill-opacity="0.3" stroke="white" stroke-width="4.5" stroke-linejoin="round"/>
+  <path d="M53 18L26 50H46L41 78L70 44H49L53 18Z" fill="white"/>
+</svg>
+`);
+
+  // Web notification badge
+  await sharp(createStatusIconSvg(96))
+    .png()
+    .toFile(path.join(process.cwd(), 'public', 'notification-icon.png'));
+
   for (const d of drawables) {
-    const dPath = path.join(resBase, d);
+    const dPath = path.join(resBase, d.dir);
     if (!fs.existsSync(dPath)) {
       fs.mkdirSync(dPath, { recursive: true });
     }
-    await sharp(srcImg).resize(96, 96).png().toFile(path.join(dPath, 'ic_stat_smart_energy.png'));
-    await sharp(srcImg).resize(96, 96).png().toFile(path.join(dPath, 'ic_stat_icon.png'));
-    await sharp(srcImg).resize(96, 96).png().toFile(path.join(dPath, 'ic_stat_icon_config_sample.png'));
-    await sharp(srcImg).resize(96, 96).png().toFile(path.join(dPath, 'push_icon.png'));
+    const statusSvg = createStatusIconSvg(d.size);
+    await sharp(statusSvg).png().toFile(path.join(dPath, 'ic_stat_smart_energy.png'));
+    await sharp(statusSvg).png().toFile(path.join(dPath, 'ic_stat_icon.png'));
+    await sharp(statusSvg).png().toFile(path.join(dPath, 'ic_stat_icon_config_sample.png'));
+    await sharp(statusSvg).png().toFile(path.join(dPath, 'push_icon.png'));
     await sharp(srcImg).resize(192, 192).png().toFile(path.join(dPath, 'ic_launcher.png'));
   }
 

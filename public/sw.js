@@ -36,24 +36,37 @@ self.addEventListener('activate', (event) => {
 // 3. Background Notifications and Messages from Client
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
-    const { title, body, tag, icon, badge, vibrate } = event.data;
-    self.registration.showNotification(title || 'Smart Énergie Monitor', {
-      body: body || 'Surveillance réseau électrique active',
-      tag: tag || 'incident-alert',
-      icon: icon || '/icon-192.png',
-      badge: badge || '/notification-icon.png',
-      vibrate: vibrate || [300, 100, 300, 100, 300],
-      renotify: true,
-      requireInteraction: false,
+    const title = event.data.title || '⚡ Smart Énergie Monitor';
+    const opts = event.data.options || {};
+    
+    const notificationOptions = {
+      body: opts.body || event.data.body || 'Surveillance réseau électrique active',
+      tag: opts.tag || event.data.tag || 'incident-alert',
+      icon: opts.icon || event.data.icon || '/icon-192.png',
+      badge: opts.badge || event.data.badge || '/notification-icon.png',
+      vibrate: opts.vibrate || event.data.vibrate || [300, 100, 300, 100, 300],
+      renotify: opts.renotify !== undefined ? opts.renotify : true,
+      requireInteraction: opts.requireInteraction !== undefined ? opts.requireInteraction : false,
       silent: false,
-      data: { url: '/' },
-    });
+      actions: opts.actions || [
+        { action: 'open_monitor', title: '⚡ Ouvrir le Moniteur' },
+        { action: 'dismiss', title: 'Fermer' }
+      ],
+      data: opts.data || event.data.data || { url: '/' },
+    };
+
+    self.registration.showNotification(title, notificationOptions);
   }
 });
 
 // 4. Notification Click Handler - Focus or Open Window
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  
+  if (event.action === 'dismiss') {
+    return;
+  }
+
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {

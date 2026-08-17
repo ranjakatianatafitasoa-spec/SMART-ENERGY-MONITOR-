@@ -69,6 +69,24 @@ class NativeService {
       try {
         await this.createNotificationChannels();
 
+        // Register rich action types for Android notification drawer
+        try {
+          await LocalNotifications.registerActionTypes({
+            types: [
+              {
+                id: 'SMART_ENERGY_NOTIF_ACTIONS',
+                actions: [
+                  {
+                    id: 'open_monitor',
+                    title: '⚡ Ouvrir le Moniteur',
+                    foreground: true,
+                  },
+                ],
+              },
+            ],
+          });
+        } catch {}
+
         let check = await LocalNotifications.checkPermissions();
         if (check.display === 'granted') {
           this.notificationsPermissionGranted = true;
@@ -189,65 +207,89 @@ class NativeService {
     }
     this.lastAlertTimestamp[typeKey] = now;
 
-    // 1. Standardized Visual Title Branding
-    let titleBadge = '';
+    // 1. Standardized Visual Title Branding & Palette
+    const cleanTitle = title.replace(/^(🔴|⚠️|✅|ℹ️|⚡|\s)+/g, '').trim();
+
+    let titlePrefix = '⚡';
     let iconColor = '#06B6D4';
     let channelId = 'smart_energy_normal_channel';
     let vibrationPattern = [200, 100, 200];
+    let summaryText = 'SMART ÉNERGIE MONITOR';
 
     switch (level) {
       case 'CRITICAL':
-        titleBadge = '🔴 [CRITIQUE]';
+        titlePrefix = '⚡ [CRITIQUE]';
         iconColor = '#EF4444';
         channelId = 'smart_energy_critical_channel';
         vibrationPattern = [300, 100, 300, 100, 500];
+        summaryText = '⚡ SÉCURITÉ CRITIQUE • COUPURE ACTIVE';
         break;
       case 'WARNING':
-        titleBadge = '⚠️ [AVERTISSEMENT]';
+        titlePrefix = '⚡ [ATTENTION]';
         iconColor = '#F59E0B';
         channelId = 'smart_energy_warning_channel';
         vibrationPattern = [200, 100, 200, 100, 200];
+        summaryText = '⚡ AVERTISSEMENT RÉSEAU';
         break;
       case 'NORMAL':
-        titleBadge = '✅ [NORMALISÉ]';
+        titlePrefix = '⚡ [NORMALISÉ]';
         iconColor = '#10B981';
         channelId = 'smart_energy_normal_channel';
         vibrationPattern = [150, 100];
+        summaryText = '⚡ RÉSEAU ÉLECTRIQUE CONFORME';
         break;
       case 'INFO':
       default:
-        titleBadge = 'ℹ️ [INFO]';
+        titlePrefix = '⚡ [INFO]';
         iconColor = '#06B6D4';
         channelId = 'smart_energy_normal_channel';
         vibrationPattern = [100];
+        summaryText = '⚡ TÉLÉMÉTRIE ESP32';
         break;
     }
 
-    const formattedTitle = `${titleBadge} ${title}`;
+    const formattedTitle = `${titlePrefix} ${cleanTitle}`;
 
-    // 2. Standardized Multi-Line Body Format
+    // 2. High-Readability Telemetry Values & Multi-Line Layout
     const timeString = new Date().toLocaleTimeString('fr-FR', {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
     });
 
-    const bodyLines: string[] = [message];
-    if (detail) {
-      bodyLines.push(`🛡️ ${detail}`);
-    }
+    const metricParts: string[] = [];
     if (metrics) {
-      const metricParts: string[] = [];
-      if (typeof metrics.voltage === 'number') metricParts.push(`V: ${metrics.voltage.toFixed(1)}V`);
-      if (typeof metrics.current === 'number') metricParts.push(`I: ${metrics.current.toFixed(2)}A`);
-      if (typeof metrics.power === 'number') metricParts.push(`P: ${Math.round(metrics.power)}W`);
-      if (metricParts.length > 0) {
-        bodyLines.push(`📊 ${metricParts.join(' • ')}`);
+      if (typeof metrics.voltage === 'number') {
+        metricParts.push(`${metrics.voltage.toFixed(1)} V`);
+      }
+      if (typeof metrics.current === 'number') {
+        metricParts.push(`${metrics.current.toFixed(2)} A`);
+      }
+      if (typeof metrics.power === 'number') {
+        if (metrics.power >= 1000) {
+          metricParts.push(`${(metrics.power / 1000).toFixed(2)} kW`);
+        } else {
+          metricParts.push(`${Math.round(metrics.power)} W`);
+        }
+      }
+      if (typeof metrics.frequency === 'number' && metrics.frequency > 0) {
+        metricParts.push(`${metrics.frequency.toFixed(1)} Hz`);
       }
     }
-    bodyLines.push(`🕒 ${timeString} • Smart Énergie Monitor`);
 
-    const formattedBody = bodyLines.join('\n');
+    const bodySections: string[] = [];
+    if (message) {
+      bodySections.push(message);
+    }
+    if (metricParts.length > 0) {
+      bodySections.push(`⚡ ${metricParts.join(' • ')}`);
+    }
+    if (detail) {
+      bodySections.push(`🛡️ ${detail}`);
+    }
+    bodySections.push(`🕒 ${timeString} • Smart Énergie Monitor`);
+
+    const formattedBody = bodySections.join('\n');
 
     // 3. Dispatch to Android Native (Capacitor) or Web Notification API
     if (this.isNative) {
@@ -269,11 +311,12 @@ class NativeService {
                 id: notifId,
                 title: formattedTitle,
                 body: formattedBody,
-                summaryText: 'Smart Énergie Monitor',
+                summaryText: summaryText,
                 channelId: channelId,
                 smallIcon: 'ic_stat_smart_energy',
                 largeIcon: 'ic_launcher',
                 iconColor: iconColor,
+                actionTypeId: 'SMART_ENERGY_NOTIF_ACTIONS',
                 extra: {
                   level,
                   type: typeKey,
@@ -291,23 +334,29 @@ class NativeService {
       // Desktop / Web Notification Fallback
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
         try {
+          const notifOptions: any = {
+            body: formattedBody,
+            icon: '/icon-192.png',
+            badge: '/notification-icon.png',
+            tag: `alert-${typeKey}`,
+            vibrate: vibrationPattern,
+            renotify: true,
+            requireInteraction: level === 'CRITICAL',
+            data: { url: '/', level, typeKey, timestamp: now },
+            actions: [
+              { action: 'open_monitor', title: '⚡ Ouvrir le Moniteur' },
+              { action: 'dismiss', title: 'Fermer' },
+            ],
+          };
+
           if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
             navigator.serviceWorker.controller.postMessage({
               type: 'SHOW_NOTIFICATION',
               title: formattedTitle,
-              body: formattedBody,
-              tag: `alert-${typeKey}`,
-              icon: '/icon-192.png',
-              badge: '/notification-icon.png',
-              vibrate: vibrationPattern,
+              options: notifOptions,
             });
           } else {
-            new Notification(formattedTitle, {
-              body: formattedBody,
-              icon: '/icon-192.png',
-              badge: '/notification-icon.png',
-              tag: `alert-${typeKey}`,
-            });
+            new Notification(formattedTitle, notifOptions);
           }
         } catch {}
       }

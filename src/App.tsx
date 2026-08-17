@@ -325,7 +325,7 @@ export default function App() {
           title: 'COUPURE SECTEUR (0V)',
           message: 'Absence totale de tension secteur détectée sur le réseau électrique.',
           detail: 'Sortie relais isolée par mesure de protection',
-          metrics: { voltage: 0, current: 0, power: 0 },
+          metrics: { voltage: 0, current: 0, power: 0, frequency: 0 },
         });
       } else if (newData.tension > curSettings.maxVoltage) {
         showToast(newData.message || 'SURTENSION CRITIQUE', 'danger');
@@ -335,7 +335,7 @@ export default function App() {
           title: `SURTENSION SECTEUR (${newData.tension.toFixed(1)} V)`,
           message: `Tension mesurée ${newData.tension.toFixed(1)} V dépassant le seuil maximal de sécurité (${curSettings.maxVoltage} V).`,
           detail: 'Relais automatique ouvert pour protéger vos appareils connectés',
-          metrics: { voltage: newData.tension, threshold: `${curSettings.maxVoltage} V` },
+          metrics: { voltage: newData.tension, current: newData.courant, power: newData.puissance, frequency: newData.frequence, threshold: `${curSettings.maxVoltage} V` },
         });
       } else if (newData.tension < curSettings.minVoltage) {
         showToast(newData.message || 'SOUS-TENSION DÉTECTÉE', 'warning');
@@ -345,7 +345,7 @@ export default function App() {
           title: `SOUS-TENSION SECTEUR (${newData.tension.toFixed(1)} V)`,
           message: `Tension mesurée ${newData.tension.toFixed(1)} V inférieure au seuil nominal minimal (${curSettings.minVoltage} V).`,
           detail: 'Relais déclenché pour prévenir la détérioration des moteurs/compresseurs',
-          metrics: { voltage: newData.tension, threshold: `${curSettings.minVoltage} V` },
+          metrics: { voltage: newData.tension, current: newData.courant, power: newData.puissance, frequency: newData.frequence, threshold: `${curSettings.minVoltage} V` },
         });
       } else if (newData.courant > curSettings.maxCurrent) {
         showToast(newData.message || 'SURINTENSITÉ DÉTECTÉE', 'warning');
@@ -355,7 +355,7 @@ export default function App() {
           title: `SURINTENSITÉ DÉTECTÉE (${newData.courant.toFixed(2)} A)`,
           message: `Courant mesuré ${newData.courant.toFixed(2)} A supérieur au calibre assigné (${curSettings.maxCurrent} A).`,
           detail: 'Disjonction active pour éliminer tout risque d\'échauffement',
-          metrics: { current: newData.courant, threshold: `${curSettings.maxCurrent} A` },
+          metrics: { voltage: newData.tension, current: newData.courant, power: newData.puissance, frequency: newData.frequence, threshold: `${curSettings.maxCurrent} A` },
         });
       } else if (newData.puissance > ((curSettings.maxVoltage * curSettings.maxCurrent) || 3500)) {
         showToast('PUISSANCE EXCESSIVE', 'warning');
@@ -365,7 +365,7 @@ export default function App() {
           title: `SURCHARGE DE PUISSANCE (${newData.puissance} W)`,
           message: `Puissance active consommée excessive (${newData.puissance} W).`,
           detail: 'Surveillance thermique active',
-          metrics: { power: newData.puissance },
+          metrics: { voltage: newData.tension, current: newData.courant, power: newData.puissance, frequency: newData.frequence },
         });
       } else if (!newData.relais && dernierRelaisRef.current === true) {
         showToast('RELAIS DÉCONNECTÉ (OFF)', 'warning');
@@ -375,6 +375,7 @@ export default function App() {
           title: 'RELAIS DE SÉCURITÉ OUVERT (OFF)',
           message: 'La charge électrique a été coupée par le système de sécurité.',
           detail: 'Protection des charges actives',
+          metrics: { voltage: newData.tension, current: newData.courant, power: newData.puissance, frequency: newData.frequence },
         });
       } else if (dernierNiveauRef.current && dernierNiveauRef.current !== 'NORMAL' && newData.niveau === 'NORMAL') {
         showToast('RETOUR À L\'ÉTAT NORMAL', 'success');
@@ -384,7 +385,7 @@ export default function App() {
           title: 'RÉSEAU ÉLECTRIQUE NORMALISÉ',
           message: `Paramètres électriques stabilisés à ${newData.tension.toFixed(1)} V et ${newData.courant.toFixed(2)} A.`,
           detail: 'Toutes les métriques sont conformes aux plages autorisées',
-          metrics: { voltage: newData.tension, current: newData.courant, power: newData.puissance },
+          metrics: { voltage: newData.tension, current: newData.courant, power: newData.puissance, frequency: newData.frequence },
         });
       }
 

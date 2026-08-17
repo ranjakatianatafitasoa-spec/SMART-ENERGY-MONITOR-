@@ -3,6 +3,37 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { Network, ConnectionStatus } from '@capacitor/network';
 import { App } from '@capacitor/app';
 
+export type AlertLevel = 'CRITICAL' | 'WARNING' | 'NORMAL' | 'INFO';
+
+export type AlertTypeKey =
+  | 'surtension'
+  | 'soustension'
+  | 'coupure'
+  | 'surintensite'
+  | 'surpuissance'
+  | 'deconnexion'
+  | 'connexion'
+  | 'relais_off'
+  | 'relais_on'
+  | 'normal';
+
+export interface AlertNotificationPayload {
+  level: AlertLevel;
+  typeKey: AlertTypeKey;
+  title: string;
+  message: string;
+  detail?: string;
+  metrics?: {
+    voltage?: number;
+    current?: number;
+    power?: number;
+    energy?: number;
+    frequency?: number;
+    threshold?: string | number;
+  };
+  timestamp?: number;
+}
+
 export interface NativePermissionsStatus {
   notificationsGranted: boolean;
   isNative: boolean;
@@ -12,7 +43,7 @@ export interface NativePermissionsStatus {
 class NativeService {
   private isNative: boolean = Capacitor.isNativePlatform();
   private notificationsPermissionGranted: boolean = false;
-  private channelCreated: boolean = false;
+  private channelsCreated: boolean = false;
   private lastAlertTimestamp: Record<string, number> = {};
 
   constructor() {
@@ -30,34 +61,27 @@ class NativeService {
     };
 
     try {
-      // 1. Check & query network status
       const netStatus = await Network.getStatus();
       status.networkStatus = netStatus;
-    } catch {
-      // Fallback for web environments
-    }
+    } catch {}
 
     if (this.isNative) {
       try {
-        // Create Android High-Priority Notification Channel
-        await this.createNotificationChannel();
+        await this.createNotificationChannels();
 
-        // Check if permission is already granted or needs to be requested
-        const check = await LocalNotifications.checkPermissions();
+        let check = await LocalNotifications.checkPermissions();
         if (check.display === 'granted') {
           this.notificationsPermissionGranted = true;
           status.notificationsGranted = true;
-        } else if (check.display === 'prompt' || check.display === 'prompt-with-rationale') {
-          // Request native permission on first launch
+        } else {
           const req = await LocalNotifications.requestPermissions();
           this.notificationsPermissionGranted = req.display === 'granted';
           status.notificationsGranted = this.notificationsPermissionGranted;
         }
       } catch (err) {
-        console.warn('[NativeService] Permission request notice:', err);
+        console.warn('[NativeService] Native permissions check error:', err);
       }
     } else {
-      // Web Notification API fallback
       if (typeof window !== 'undefined' && 'Notification' in window) {
         if (Notification.permission === 'granted') {
           this.notificationsPermissionGranted = true;
@@ -81,6 +105,7 @@ class NativeService {
   public async requestNotificationPermission(): Promise<boolean> {
     if (this.isNative) {
       try {
+        await this.createNotificationChannels();
         const req = await LocalNotifications.requestPermissions();
         this.notificationsPermissionGranted = req.display === 'granted';
         return this.notificationsPermissionGranted;
@@ -102,66 +127,159 @@ class NativeService {
   }
 
   /**
-   * Creates Android Notification Channel with sound, lights & vibration
+   * Creates Android Notification Channels with sound, lights & vibration
    */
-  private async createNotificationChannel(): Promise<void> {
-    if (!this.isNative || this.channelCreated) return;
+  private async createNotificationChannels(): Promise<void> {
+    if (!this.isNative || this.channelsCreated) return;
     try {
+      // 1. Critical Urgence Channel
       await LocalNotifications.createChannel({
-        id: 'smart_energy_critical_alerts',
-        name: 'Smart Énergie — Alertes Électriques',
-        description: 'Surveillance en temps réel des surtensions, coupures, surintensités et pilotage relais',
-        importance: 5, // High priority / Heads-up
-        visibility: 1, // Public on lockscreen
+        id: 'smart_energy_critical_channel',
+        name: 'Alertes Électriques Critiques',
+        description: 'Surtensions dangereuses, coupures secteur 0V et disjonctions',
+        importance: 5, // MAX importance - heads up banner
+        visibility: 1, // Public lockscreen
         sound: 'beep.wav',
         vibration: true,
         lights: true,
-        lightColor: '#06B6D4',
+        lightColor: '#EF4444',
       });
-      this.channelCreated = true;
+
+      // 2. Warning / Attention Channel
+      await LocalNotifications.createChannel({
+        id: 'smart_energy_warning_channel',
+        name: 'Avertissements Réseau Électrique',
+        description: 'Sous-tensions, surcharges de courant et état du relais',
+        importance: 4, // HIGH importance
+        visibility: 1,
+        sound: 'beep.wav',
+        vibration: true,
+        lights: true,
+        lightColor: '#F59E0B',
+      });
+
+      // 3. Normal / Information Channel
+      await LocalNotifications.createChannel({
+        id: 'smart_energy_normal_channel',
+        name: 'Statut et Normalisation Réseau',
+        description: 'Retour à la normale et état de connexion ESP32',
+        importance: 3, // DEFAULT
+        visibility: 1,
+        vibration: false,
+        lights: true,
+        lightColor: '#10B981',
+      });
+
+      this.channelsCreated = true;
     } catch {
       // Channel creation fallback
     }
   }
 
   /**
-   * Send a rich native alert notification with professional styling and icons
+   * Send a rich, standardized alert notification with professional schema
    */
-  public async sendAlertNotification(
-    typeKey: 'surtension' | 'soustension' | 'surintensite' | 'surpuissance' | 'deconnexion' | 'connexion' | 'relais_off' | 'normal',
-    title: string,
-    body: string,
-    details?: { voltage?: number; current?: number; power?: number }
-  ): Promise<void> {
-    // Prevent flood: throttle same notification key to once every 6 seconds
+  public async sendAlertNotification(payload: AlertNotificationPayload): Promise<void> {
+    const { level, typeKey, title, message, detail, metrics } = payload;
+
+    // Prevent flood: throttle same notification key to once every 4 seconds
     const now = Date.now();
-    if (this.lastAlertTimestamp[typeKey] && now - this.lastAlertTimestamp[typeKey] < 6000) {
+    if (this.lastAlertTimestamp[typeKey] && now - this.lastAlertTimestamp[typeKey] < 4000) {
       return;
     }
     this.lastAlertTimestamp[typeKey] = now;
 
-    const formattedTime = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const fullBody = details
-      ? `${body}\n[ ${formattedTime} ]`
-      : `${body}`;
+    // 1. Standardized Visual Title Branding
+    let titleBadge = '';
+    let iconColor = '#06B6D4';
+    let channelId = 'smart_energy_normal_channel';
+    let vibrationPattern = [200, 100, 200];
 
+    switch (level) {
+      case 'CRITICAL':
+        titleBadge = '🔴 [CRITIQUE]';
+        iconColor = '#EF4444';
+        channelId = 'smart_energy_critical_channel';
+        vibrationPattern = [300, 100, 300, 100, 500];
+        break;
+      case 'WARNING':
+        titleBadge = '⚠️ [AVERTISSEMENT]';
+        iconColor = '#F59E0B';
+        channelId = 'smart_energy_warning_channel';
+        vibrationPattern = [200, 100, 200, 100, 200];
+        break;
+      case 'NORMAL':
+        titleBadge = '✅ [NORMALISÉ]';
+        iconColor = '#10B981';
+        channelId = 'smart_energy_normal_channel';
+        vibrationPattern = [150, 100];
+        break;
+      case 'INFO':
+      default:
+        titleBadge = 'ℹ️ [INFO]';
+        iconColor = '#06B6D4';
+        channelId = 'smart_energy_normal_channel';
+        vibrationPattern = [100];
+        break;
+    }
+
+    const formattedTitle = `${titleBadge} ${title}`;
+
+    // 2. Standardized Multi-Line Body Format
+    const timeString = new Date().toLocaleTimeString('fr-FR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    const bodyLines: string[] = [message];
+    if (detail) {
+      bodyLines.push(`🛡️ ${detail}`);
+    }
+    if (metrics) {
+      const metricParts: string[] = [];
+      if (typeof metrics.voltage === 'number') metricParts.push(`V: ${metrics.voltage.toFixed(1)}V`);
+      if (typeof metrics.current === 'number') metricParts.push(`I: ${metrics.current.toFixed(2)}A`);
+      if (typeof metrics.power === 'number') metricParts.push(`P: ${Math.round(metrics.power)}W`);
+      if (metricParts.length > 0) {
+        bodyLines.push(`📊 ${metricParts.join(' • ')}`);
+      }
+    }
+    bodyLines.push(`🕒 ${timeString} • Smart Énergie Monitor`);
+
+    const formattedBody = bodyLines.join('\n');
+
+    // 3. Dispatch to Android Native (Capacitor) or Web Notification API
     if (this.isNative) {
       try {
-        const hasPerm = await LocalNotifications.checkPermissions();
+        await this.createNotificationChannels();
+
+        let hasPerm = await LocalNotifications.checkPermissions();
+        if (hasPerm.display !== 'granted') {
+          hasPerm = await LocalNotifications.requestPermissions();
+        }
+
         if (hasPerm.display === 'granted') {
-          const notifId = Math.floor(Math.random() * 100000) + 1;
+          // Generate 32-bit positive integer for Android notification ID
+          const notifId = (Math.abs(this.hashString(typeKey)) % 90000) + 10000;
+
           await LocalNotifications.schedule({
             notifications: [
               {
                 id: notifId,
-                title,
-                body: fullBody,
+                title: formattedTitle,
+                body: formattedBody,
                 summaryText: 'Smart Énergie Monitor',
-                channelId: 'smart_energy_critical_alerts',
+                channelId: channelId,
                 smallIcon: 'ic_stat_smart_energy',
                 largeIcon: 'ic_launcher',
-                iconColor: typeKey === 'normal' ? '#10B981' : typeKey === 'surtension' ? '#EF4444' : '#06B6D4',
-                extra: { type: typeKey, timestamp: now },
+                iconColor: iconColor,
+                extra: {
+                  level,
+                  type: typeKey,
+                  timestamp: now,
+                  metrics,
+                },
               },
             ],
           });
@@ -170,22 +288,22 @@ class NativeService {
         console.warn('[NativeService] Schedule alert failed:', err);
       }
     } else {
-      // Browser / ServiceWorker Notification fallback
+      // Desktop / Web Notification Fallback
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
         try {
           if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
             navigator.serviceWorker.controller.postMessage({
               type: 'SHOW_NOTIFICATION',
-              title,
-              body: fullBody,
+              title: formattedTitle,
+              body: formattedBody,
               tag: `alert-${typeKey}`,
               icon: '/icon-192.png',
               badge: '/notification-icon.png',
-              vibrate: typeKey === 'surtension' ? [300, 100, 300, 100, 500] : [200, 100, 200],
+              vibrate: vibrationPattern,
             });
           } else {
-            new Notification(title, {
-              body: fullBody,
+            new Notification(formattedTitle, {
+              body: formattedBody,
               icon: '/icon-192.png',
               badge: '/notification-icon.png',
               tag: `alert-${typeKey}`,
@@ -194,6 +312,18 @@ class NativeService {
         } catch {}
       }
     }
+  }
+
+  /**
+   * Helper to generate stable integer hash from a string
+   */
+  private hashString(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return hash;
   }
 
   /**
@@ -255,3 +385,4 @@ class NativeService {
 }
 
 export const nativeService = new NativeService();
+

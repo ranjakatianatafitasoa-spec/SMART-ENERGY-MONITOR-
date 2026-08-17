@@ -19,7 +19,7 @@ const config: CapacitorConfig = {
   },
   plugins: {
     LocalNotifications: {
-      smallIcon: 'ic_stat_icon_config_sample',
+      smallIcon: 'ic_stat_smart_energy',
       iconColor: '#06B6D4',
       sound: 'beep.wav',
     },

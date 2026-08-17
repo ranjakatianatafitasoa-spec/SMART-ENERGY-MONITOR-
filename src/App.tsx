@@ -203,11 +203,32 @@ export default function App() {
       }
     });
 
-    // 2. Wi-Fi & Network change listener
+    // 2. Wi-Fi & Network change listener for rapid zero-reset
     const cleanupNet = nativeService.onNetworkChange((netStatus) => {
-      // Only notify on actual network state changes if native
       if (!netStatus.connected) {
-        // Disconnected
+        setData((prev) => ({
+          ...prev,
+          tension: 0.0,
+          courant: 0.0,
+          puissance: 0,
+          puissanceApparente: 0,
+          frequence: 0.0,
+          facteurPuissance: 0.0,
+          wifiConnected: false,
+          esp32Connected: false,
+          niveau: 'ATTENTION',
+          message: 'Réseau Wi-Fi déconnecté — En attente du module ESP32',
+        }));
+        if (wasConnectedRef.current === true) {
+          wasConnectedRef.current = false;
+          nativeService.sendAlertNotification({
+            level: 'WARNING',
+            typeKey: 'deconnexion',
+            title: 'LIAISON WI-FI INTERROMPUE',
+            message: 'La connexion au réseau Wi-Fi a été perdue.',
+            detail: 'Remise à zéro de la télémétrie active',
+          });
+        }
       }
     });
 
@@ -298,59 +319,73 @@ export default function App() {
       // Sound alert & auto-toast on state transitions
       if (newData.tension === 0) {
         showToast('COUPURE SECTEUR (0V) DÉTECTÉE', 'danger');
-        nativeService.sendAlertNotification(
-          'soustension',
-          '🔴 COUPURE SECTEUR (0V)',
-          'Absence de tension secteur détectée sur le réseau électrique • Sortie sécurisée',
-          { voltage: 0 }
-        );
+        nativeService.sendAlertNotification({
+          level: 'CRITICAL',
+          typeKey: 'coupure',
+          title: 'COUPURE SECTEUR (0V)',
+          message: 'Absence totale de tension secteur détectée sur le réseau électrique.',
+          detail: 'Sortie relais isolée par mesure de protection',
+          metrics: { voltage: 0, current: 0, power: 0 },
+        });
       } else if (newData.tension > curSettings.maxVoltage) {
         showToast(newData.message || 'SURTENSION CRITIQUE', 'danger');
-        nativeService.sendAlertNotification(
-          'surtension',
-          '⚡ SURTENSION CRITIQUE',
-          `Tension mesurée: ${newData.tension.toFixed(1)} V (> ${curSettings.maxVoltage} V) • Relais ouvert pour protection`,
-          { voltage: newData.tension }
-        );
+        nativeService.sendAlertNotification({
+          level: 'CRITICAL',
+          typeKey: 'surtension',
+          title: `SURTENSION SECTEUR (${newData.tension.toFixed(1)} V)`,
+          message: `Tension mesurée ${newData.tension.toFixed(1)} V dépassant le seuil maximal de sécurité (${curSettings.maxVoltage} V).`,
+          detail: 'Relais automatique ouvert pour protéger vos appareils connectés',
+          metrics: { voltage: newData.tension, threshold: `${curSettings.maxVoltage} V` },
+        });
       } else if (newData.tension < curSettings.minVoltage) {
         showToast(newData.message || 'SOUS-TENSION DÉTECTÉE', 'warning');
-        nativeService.sendAlertNotification(
-          'soustension',
-          '⚠️ SOUS-TENSION SECTEUR',
-          `Tension mesurée: ${newData.tension.toFixed(1)} V (< ${curSettings.minVoltage} V) • Risque d'instabilité électrique`,
-          { voltage: newData.tension }
-        );
+        nativeService.sendAlertNotification({
+          level: 'WARNING',
+          typeKey: 'soustension',
+          title: `SOUS-TENSION SECTEUR (${newData.tension.toFixed(1)} V)`,
+          message: `Tension mesurée ${newData.tension.toFixed(1)} V inférieure au seuil nominal minimal (${curSettings.minVoltage} V).`,
+          detail: 'Relais déclenché pour prévenir la détérioration des moteurs/compresseurs',
+          metrics: { voltage: newData.tension, threshold: `${curSettings.minVoltage} V` },
+        });
       } else if (newData.courant > curSettings.maxCurrent) {
         showToast(newData.message || 'SURINTENSITÉ DÉTECTÉE', 'warning');
-        nativeService.sendAlertNotification(
-          'surintensite',
-          '⚡ SURINTENSITÉ DÉTECTÉE',
-          `Courant mesuré: ${newData.courant.toFixed(2)} A (> ${curSettings.maxCurrent} A) • Disjonction automatique active`,
-          { current: newData.courant }
-        );
+        nativeService.sendAlertNotification({
+          level: 'WARNING',
+          typeKey: 'surintensite',
+          title: `SURINTENSITÉ DÉTECTÉE (${newData.courant.toFixed(2)} A)`,
+          message: `Courant mesuré ${newData.courant.toFixed(2)} A supérieur au calibre assigné (${curSettings.maxCurrent} A).`,
+          detail: 'Disjonction active pour éliminer tout risque d\'échauffement',
+          metrics: { current: newData.courant, threshold: `${curSettings.maxCurrent} A` },
+        });
       } else if (newData.puissance > ((curSettings.maxVoltage * curSettings.maxCurrent) || 3500)) {
         showToast('PUISSANCE EXCESSIVE', 'warning');
-        nativeService.sendAlertNotification(
-          'surpuissance',
-          '⚡ SURCHARGE DE PUISSANCE',
-          `Puissance active: ${newData.puissance} W dépassant la limite assignée`,
-          { power: newData.puissance }
-        );
+        nativeService.sendAlertNotification({
+          level: 'WARNING',
+          typeKey: 'surpuissance',
+          title: `SURCHARGE DE PUISSANCE (${newData.puissance} W)`,
+          message: `Puissance active consommée excessive (${newData.puissance} W).`,
+          detail: 'Surveillance thermique active',
+          metrics: { power: newData.puissance },
+        });
       } else if (!newData.relais && dernierRelaisRef.current === true) {
         showToast('RELAIS DÉCONNECTÉ (OFF)', 'warning');
-        nativeService.sendAlertNotification(
-          'relais_off',
-          '🛡️ SÉCURITÉ ACTIVE — RELAIS OUVERT',
-          'Le relais de sécurité a coupé la charge pour protéger les équipements connectés.'
-        );
+        nativeService.sendAlertNotification({
+          level: 'WARNING',
+          typeKey: 'relais_off',
+          title: 'RELAIS DE SÉCURITÉ OUVERT (OFF)',
+          message: 'La charge électrique a été coupée par le système de sécurité.',
+          detail: 'Protection des charges actives',
+        });
       } else if (dernierNiveauRef.current && dernierNiveauRef.current !== 'NORMAL' && newData.niveau === 'NORMAL') {
         showToast('RETOUR À L\'ÉTAT NORMAL', 'success');
-        nativeService.sendAlertNotification(
-          'normal',
-          '✅ RÉSEAU ÉLECTRIQUE NORMALISÉ',
-          `Tension stable: ${newData.tension.toFixed(1)} V • Tous les paramètres sont dans les plages de sécurité`,
-          { voltage: newData.tension, current: newData.courant }
-        );
+        nativeService.sendAlertNotification({
+          level: 'NORMAL',
+          typeKey: 'normal',
+          title: 'RÉSEAU ÉLECTRIQUE NORMALISÉ',
+          message: `Paramètres électriques stabilisés à ${newData.tension.toFixed(1)} V et ${newData.courant.toFixed(2)} A.`,
+          detail: 'Toutes les métriques sont conformes aux plages autorisées',
+          metrics: { voltage: newData.tension, current: newData.courant, power: newData.puissance },
+        });
       }
 
       if (curSettings.soundAlerts && estIncident) {
@@ -518,11 +553,14 @@ export default function App() {
         // Connection restored notification
         if (wasConnectedRef.current === false) {
           wasConnectedRef.current = true;
-          nativeService.sendAlertNotification(
-            'connexion',
-            '✅ ESP32 CONNECTÉ',
-            `Liaison rétablie avec succès avec le module ESP32 (${targetIp})`
-          );
+          nativeService.sendAlertNotification({
+            level: 'INFO',
+            typeKey: 'connexion',
+            title: 'ESP32 CONNECTÉ AU RÉSEAU',
+            message: `Liaison télémétrique active établie avec le module (${targetIp}).`,
+            detail: 'Acquisition des grandeurs électriques en temps réel',
+            metrics: { voltage: updatedData.tension, current: updatedData.courant, power: updatedData.puissance },
+          });
         } else if (wasConnectedRef.current === null) {
           wasConnectedRef.current = true;
         }
@@ -536,15 +574,18 @@ export default function App() {
         // Increment consecutive failure counter
         consecutiveFailsRef.current += 1;
 
-        // Disconnected state: strictly 0V, 0A, 0W when ESP32 is absent or disconnected
-        if (consecutiveFailsRef.current >= 3) {
+        // Disconnected state: strictly 0V, 0A, 0W when ESP32 is unplugged or Wi-Fi lost
+        if (consecutiveFailsRef.current >= 2) {
           if (wasConnectedRef.current === true) {
             wasConnectedRef.current = false;
-            nativeService.sendAlertNotification(
-              'deconnexion',
-              '⚠️ LIAISON ESP32 PERDUE',
-              `Le module ESP32 (${targetIp}) est devenu injoignable. Vérifiez la connexion Wi-Fi.`
-            );
+            nativeService.sendAlertNotification({
+              level: 'WARNING',
+              typeKey: 'deconnexion',
+              title: 'LIAISON ESP32 DÉCONNECTÉE',
+              message: `Le module ESP32 (${targetIp}) est débranché ou hors de portée.`,
+              detail: 'Tension, courant et puissance remis à 0.0',
+              metrics: { voltage: 0, current: 0, power: 0 },
+            });
           }
           activeEndpointRef.current = null;
           setData((prev) => ({
@@ -559,7 +600,7 @@ export default function App() {
             esp32Connected: false,
             // Keep cumulative Wh energy intact
             niveau: 'ATTENTION',
-            message: `Module ESP32 non connecté (${targetIp}) — Wi-Fi déconnecté`,
+            message: `Module ESP32 déconnecté (${targetIp}) — Wi-Fi hors ligne`,
           }));
         }
       }

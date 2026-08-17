@@ -57,6 +57,7 @@ async function generateAllIcons() {
     }
     await sharp(srcImg).resize(96, 96).png().toFile(path.join(dPath, 'ic_stat_smart_energy.png'));
     await sharp(srcImg).resize(96, 96).png().toFile(path.join(dPath, 'ic_stat_icon.png'));
+    await sharp(srcImg).resize(96, 96).png().toFile(path.join(dPath, 'ic_stat_icon_config_sample.png'));
     await sharp(srcImg).resize(96, 96).png().toFile(path.join(dPath, 'push_icon.png'));
   }
 
